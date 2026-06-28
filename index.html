@@ -117,6 +117,24 @@
   .predcell{color:var(--muted);font-size:12px}
   .predcell:focus{color:var(--txt)}
   .gmile.mcrit{background:var(--crit)}
+  /* CALENDAR */
+  .cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .cal-title{font-size:18px;font-weight:700}
+  .cal-nav{display:flex;gap:6px}
+  .cal-nav .btn{min-width:38px}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .cal-dow{background:var(--panel2);color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;padding:7px 8px;text-align:center}
+  .cal-cell{background:var(--panel);min-height:98px;padding:5px 6px}
+  .cal-cell.out{background:#12152a}
+  .cal-cell.out .cal-day{opacity:.4}
+  .cal-cell.today{outline:2px solid var(--accent);outline-offset:-2px}
+  .cal-day{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .cal-cell.today .cal-day{color:var(--accent);font-weight:700}
+  .cal-ev{font-size:11px;padding:2px 6px;border-radius:5px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cal-ev.mile{background:rgba(245,185,69,.18);color:var(--amber);font-weight:600}
+  .cal-ev.mile.crit{background:rgba(255,122,89,.2);color:var(--crit)}
+  .cal-ev.due{background:var(--panel2);color:var(--muted)}
+  .cal-more{font-size:10px;color:var(--muted);padding-left:4px}
   /* SOW */
   #sowText{width:100%;min-height:190px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:14px;font-size:13px;font-family:inherit;line-height:1.5;resize:vertical}
   #sowText:focus{outline:2px solid var(--accent)}
@@ -165,6 +183,7 @@
   <div class="tab" data-v="gantt">▭ Gantt</div>
   <div class="tab" data-v="board">▤ Board</div>
   <div class="tab" data-v="dash">◷ Dashboard</div>
+  <div class="tab" data-v="cal">🗓 Calendar</div>
   <div class="tab" data-v="sow">✦ SOW → Plan</div>
 </div>
 
@@ -206,6 +225,23 @@
     <div class="grid2">
       <div class="panel"><h3>Progress by task</h3><div class="barsrow" id="bars"></div></div>
       <div class="panel"><h3>Work by status</h3><div class="donut"><svg width="150" height="150" viewBox="0 0 42 42" id="donut"></svg><div class="leglist" id="donutleg"></div></div></div>
+    </div>
+  </section>
+
+  <section class="view" id="cal">
+    <div class="cal-head">
+      <div class="cal-title" id="calTitle"></div>
+      <div class="cal-nav">
+        <button class="btn" id="calPrev" title="Previous month">‹</button>
+        <button class="btn" id="calToday">Today</button>
+        <button class="btn" id="calNext" title="Next month">›</button>
+      </div>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="legend">
+      <span><i style="background:#f5b945;border-radius:2px"></i>Milestone</span>
+      <span><i style="background:#ff7a59;border-radius:2px"></i>Critical milestone</span>
+      <span><i style="background:#2a2f4a"></i>Task due</span>
     </div>
   </section>
 
@@ -765,7 +801,7 @@ document.getElementById('pptxBtn').onclick=()=>exportPPTX();
 function exportPPTX(){
   if(typeof PptxGenJS==='undefined'){alert('PowerPoint library is still loading — try again in a second.');return;}
   const view=document.querySelector('.tab.active').dataset.v;
-  if(view==='sow'){alert('Switch to Grid, Gantt, Board or Dashboard to export that view.');return;}
+  if(view==='sow'||view==='cal'){alert('Switch to Grid, Gantt, Board or Dashboard to export to PowerPoint.');return;}
   const pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';
   const titles={grid:'Task Grid',gantt:'Gantt Timeline',board:'Board',dash:'Dashboard'};
   const s=pptx.addSlide();s.background={color:'0F1220'};
@@ -843,7 +879,48 @@ function slideDash(pptx){
   });
 }
 
-function renderAll(){reschedule();renderGrid();renderGantt();renderBoard();renderDash();}
+/* ---------- CALENDAR ---------- */
+let calMonth=null;
+function calEvents(){
+  const ev={};
+  state.tasks.forEach(t=>{
+    const crit=!!(CPM[t.id]&&CPM[t.id].critical);
+    if(t.milestone&&t.start){(ev[t.start]=ev[t.start]||[]).push({type:'mile',name:t.name,crit});}
+    else if(!t.milestone&&t.finish){(ev[t.finish]=ev[t.finish]||[]).push({type:'due',name:t.name,crit});}
+  });
+  return ev;
+}
+function renderCalendar(){
+  const grid=document.getElementById('calGrid');if(!grid)return;
+  if(!calMonth){
+    const ds=state.tasks.filter(t=>t.milestone&&t.start).map(t=>t.start)
+      .concat(state.tasks.map(t=>t.finish).filter(Boolean)).sort();
+    const base=ds.length?new Date(ds[0]+'T00:00:00'):new Date();
+    calMonth=new Date(base.getFullYear(),base.getMonth(),1);
+  }
+  const y=calMonth.getFullYear(),m=calMonth.getMonth();
+  document.getElementById('calTitle').textContent=calMonth.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const ev=calEvents();
+  const startDow=new Date(y,m,1).getDay();
+  const gridStart=new Date(y,m,1-startDow);
+  const todayISO=new Date().toISOString().slice(0,10);
+  const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html=dow.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  for(let i=0;i<42;i++){
+    const d=new Date(gridStart);d.setDate(gridStart.getDate()+i);
+    const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const out=d.getMonth()!==m,evs=ev[iso]||[];
+    let chips=evs.slice(0,3).map(e=>`<div class="cal-ev ${e.type==='mile'?'mile':'due'} ${e.crit?'crit':''}" title="${esc(e.name)}">${e.type==='mile'?'◆ ':''}${esc(e.name)}</div>`).join('');
+    if(evs.length>3)chips+=`<div class="cal-more">+${evs.length-3} more</div>`;
+    html+=`<div class="cal-cell ${out?'out':''} ${iso===todayISO?'today':''}"><div class="cal-day">${d.getDate()}</div>${chips}</div>`;
+  }
+  grid.innerHTML=html;
+}
+document.getElementById('calPrev').onclick=()=>{calMonth=new Date(calMonth.getFullYear(),calMonth.getMonth()-1,1);renderCalendar();};
+document.getElementById('calNext').onclick=()=>{calMonth=new Date(calMonth.getFullYear(),calMonth.getMonth()+1,1);renderCalendar();};
+document.getElementById('calToday').onclick=()=>{const n=new Date();calMonth=new Date(n.getFullYear(),n.getMonth(),1);renderCalendar();};
+
+function renderAll(){reschedule();renderGrid();renderGantt();renderBoard();renderDash();renderCalendar();}
 renderProjects();renderAll();
 </script>
 </body>
