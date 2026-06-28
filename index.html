@@ -6,6 +6,7 @@
 <title>Keystone — Project Management</title>
 <meta name="description" content="Keystone — as easy as a spreadsheet, as deep as MS Project, as collaborative as a modern SaaS app.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%235b8cff'/%3E%3Ctext x='50' y='70' font-size='62' text-anchor='middle' fill='white'%3E%E2%97%86%3C/text%3E%3C/svg%3E">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0f1220;--panel:#171a2b;--panel2:#1e2236;--line:#2a2f4a;
@@ -130,8 +131,10 @@
   <div class="ctabar">💾 <b>Live app.</b>&nbsp;Add, edit and delete tasks — everything saves to your browser and stays in sync across all four views.</div>
   <div class="toolbar">
     <button class="btn primary" id="addBtn">+ New task</button>
+    <button class="btn" id="importBtn">⭱ Import</button>
     <button class="btn" id="exportBtn">⭳ Export CSV</button>
     <button class="btn danger" id="resetBtn">↺ Reset demo data</button>
+    <input type="file" id="importFile" accept=".xlsx,.xls,.csv,.xml,.mpp" style="display:none">
   </div>
 
   <section class="view active" id="grid">
@@ -181,6 +184,19 @@
     <div class="modal-actions">
       <button class="btn" id="cancelBtn">Cancel</button>
       <button class="btn primary" id="saveBtn">Save task</button>
+    </div>
+  </div>
+</div>
+<!-- Import modal -->
+<div class="modal-bg" id="importModal">
+  <div class="modal">
+    <h3>Import tasks</h3>
+    <p class="sub" id="importInfo" style="margin-bottom:6px"></p>
+    <p class="hint" style="margin-top:0">Choose how to bring them into your project.</p>
+    <div class="modal-actions">
+      <button class="btn" id="importCancel">Cancel</button>
+      <button class="btn" id="importAppend">Add to project</button>
+      <button class="btn primary" id="importReplace">Replace all</button>
     </div>
   </div>
 </div>
@@ -381,6 +397,108 @@ document.getElementById('exportBtn').onclick=()=>{
   a.download='keystone-tasks.csv';a.click();
 };
 document.getElementById('resetBtn').onclick=()=>{if(confirm('Reset to demo data? Your changes will be lost.')){state={tasks:structuredClone(SEED)};save();renderAll();}};
+
+/* ---------- IMPORT (Excel / CSV / MS Project XML) ---------- */
+const PALETTE=['#5b8cff','#7c5cff','#37c98a','#f5b945','#ff6b6b','#3fc4d6','#e072c8','#9d7bff','#52b788','#ff9f5b'];
+function ensureColor(o){if(o&&o!=='?'&&!COLORS[o]){let h=0;for(const ch of o)h=(h*31+ch.charCodeAt(0))>>>0;COLORS[o]=PALETTE[h%PALETTE.length];}}
+function initials(name){const s=String(name||'').trim();if(!s)return'?';const w=s.split(/\s+/);return(w.length>1?w[0][0]+w[1][0]:w[0].slice(0,2)).toUpperCase();}
+function toISO(v){
+  if(v==null||v==='')return'';
+  if(v instanceof Date&&!isNaN(v))return new Date(v.getTime()-v.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+  const s=String(v).trim();const m=s.match(/^(\d{4}-\d{2}-\d{2})/);if(m)return m[1];
+  const d=new Date(s);return isNaN(d)?'':d.toISOString().slice(0,10);
+}
+function mapStatus(txt,prog){
+  const t=String(txt||'').toLowerCase();
+  if(/done|complete|finished|closed/.test(t)||prog>=100)return'done';
+  if(/late|overdue|behind|delayed/.test(t))return'late';
+  if(/risk|warning|hold|blocked/.test(t))return'risk';
+  return'track';
+}
+const pickKey=(keys,re)=>keys.find(k=>re.test(k));
+
+function parseExcel(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+  if(!rows.length)return[];
+  const keys=Object.keys(rows[0]);
+  const kName=pickKey(keys,/task|name|activity|title|summary/i)||keys[0];
+  const kOwner=pickKey(keys,/owner|assign|resource|who|lead/i);
+  const kStart=pickKey(keys,/start|begin/i);
+  const kFinish=pickKey(keys,/finish|end|due|complete date/i);
+  const kStatus=pickKey(keys,/status|state/i);
+  const kProg=pickKey(keys,/progress|percent|%|complete/i);
+  return rows.map(r=>{
+    const raw=String(r[kName]||'');const name=raw.replace(/^◆\s*/,'').trim();
+    if(!name)return null;
+    let prog=0;if(kProg){let p=parseFloat(String(r[kProg]).replace('%',''));if(!isNaN(p))prog=(p>0&&p<=1)?Math.round(p*100):Math.round(p);}
+    return{name,owner:kOwner?initials(r[kOwner]):'?',start:toISO(r[kStart]),finish:toISO(r[kFinish]),
+      status:mapStatus(kStatus?r[kStatus]:'',prog),prog:Math.min(100,Math.max(0,prog)),milestone:/^◆/.test(raw)};
+  }).filter(Boolean);
+}
+
+function parseMSP(xmlText){
+  const doc=new DOMParser().parseFromString(xmlText,'application/xml');
+  if(doc.querySelector('parsererror'))throw new Error('not valid XML');
+  const T=el=>el?el.textContent:'';
+  const resMap={};
+  doc.querySelectorAll('Resources > Resource').forEach(r=>{resMap[T(r.querySelector('UID'))]=T(r.querySelector('Name'));});
+  const assign={};
+  doc.querySelectorAll('Assignments > Assignment').forEach(a=>{
+    const tu=T(a.querySelector('TaskUID')),ru=T(a.querySelector('ResourceUID'));
+    if(resMap[ru]&&!assign[tu])assign[tu]=resMap[ru];
+  });
+  const tasks=[...doc.querySelectorAll('Tasks > Task')];
+  if(!tasks.length)throw new Error('no <Task> elements found — is this a Microsoft Project XML export?');
+  const out=[];
+  tasks.forEach(tk=>{
+    const uid=T(tk.querySelector('UID'));
+    const name=T(tk.querySelector('Name')).trim();
+    if(!name||uid==='0')return;
+    const prog=parseInt(T(tk.querySelector('PercentComplete'))||'0',10)||0;
+    out.push({name,owner:assign[uid]?initials(assign[uid]):'?',start:toISO(T(tk.querySelector('Start'))),
+      finish:toISO(T(tk.querySelector('Finish'))),status:prog>=100?'done':'track',prog,
+      milestone:T(tk.querySelector('Milestone'))==='1'});
+  });
+  return out;
+}
+
+let _pending=null;
+function showImportConfirm(list,kind){
+  if(!list.length){alert('No tasks were found in that '+kind+' file.');return;}
+  _pending=list;
+  document.getElementById('importInfo').textContent=`Found ${list.length} task${list.length!==1?'s':''} in your ${kind} file.`;
+  document.getElementById('importModal').classList.add('open');
+}
+function doImport(mode){
+  if(!_pending)return;
+  _pending.forEach(t=>ensureColor(t.owner));
+  if(mode==='replace')state.tasks=[];
+  _pending.forEach(t=>state.tasks.push({id:nextId(),...t}));
+  _pending=null;save();renderAll();
+  document.getElementById('importModal').classList.remove('open');
+}
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+document.getElementById('importCancel').onclick=()=>{document.getElementById('importModal').classList.remove('open');_pending=null;};
+document.getElementById('importAppend').onclick=()=>doImport('append');
+document.getElementById('importReplace').onclick=()=>doImport('replace');
+document.getElementById('importFile').onchange=e=>{
+  const file=e.target.files[0];if(!file)return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(ext==='mpp'){
+    alert('Microsoft Project .mpp files use a proprietary binary format that can’t be read directly in the browser.\n\nTo import: in Microsoft Project choose File → Save As, pick "XML Format (*.xml)", then import that .xml file here.');
+    e.target.value='';return;
+  }
+  const reader=new FileReader();
+  if(ext==='xml'){
+    reader.onload=()=>{try{showImportConfirm(parseMSP(reader.result),'Microsoft Project XML');}catch(err){alert('Could not read that XML file: '+err.message);}};
+    reader.readAsText(file);
+  }else{
+    reader.onload=()=>{try{showImportConfirm(parseExcel(reader.result),ext==='csv'?'CSV':'Excel');}catch(err){alert('Could not read that file: '+err.message);}};
+    reader.readAsArrayBuffer(file);
+  }
+  e.target.value='';
+};
 
 /* ---------- TABS + INIT ---------- */
 document.getElementById('tabs').addEventListener('click',e=>{
