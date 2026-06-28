@@ -113,9 +113,20 @@
   footer{color:var(--muted);font-size:12px;text-align:center;padding:22px}
   .ctabar{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--muted)}
   .ctabar b{color:var(--txt)}
-  .rownum{color:var(--muted);font-size:12px;text-align:center}
+  .rownum{color:var(--muted);font-size:12px;text-align:center;cursor:pointer}
+  .rownum:hover{color:var(--accent);text-decoration:underline}
   .predcell{color:var(--muted);font-size:12px}
   .predcell:focus{color:var(--txt)}
+  .ownercell{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:13px;font-size:11px;font-weight:700;color:#fff;cursor:text}
+  .ownercell:focus{outline:2px solid var(--accent)}
+  .statussel{appearance:none;-webkit-appearance:none;border:none;border-radius:20px;padding:3px 11px;font-size:11px;font-weight:700;cursor:pointer}
+  .statussel:focus{outline:2px solid var(--accent)}
+  .statussel option{background:var(--panel2);color:var(--txt)}
+  .progcell{display:flex;align-items:center;gap:8px}
+  .proginput{width:46px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--txt);font-size:12px;padding:3px 5px}
+  .proginput:focus{outline:1px solid var(--accent)}
+  .addrow td{text-align:center;color:var(--accent);cursor:pointer;font-weight:600;padding:11px;background:var(--panel)}
+  .addrow td:hover{background:var(--panel2)}
   .gmile.mcrit{background:var(--crit)}
   /* CALENDAR */
   .cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
@@ -272,6 +283,7 @@
       <select id="f-status"><option value="track">On track</option><option value="risk">At risk</option><option value="late">Late</option><option value="done">Done</option></select>
     </div>
     <div class="field"><label>Progress %</label><input id="f-prog" type="number" min="0" max="100" value="0"></div>
+    <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="f-milestone" style="width:auto"> This is a milestone (zero-duration checkpoint)</label></div>
     <div class="modal-actions">
       <button class="btn" id="cancelBtn">Cancel</button>
       <button class="btn primary" id="saveBtn">Save task</button>
@@ -377,31 +389,48 @@ function renderGrid(){
     const c=CPM[t.id];const critCls=c&&c.critical?' style="color:var(--crit);font-weight:700"':'';
     const tr=document.createElement('tr');
     tr.innerHTML=`
-      <td class="rownum"${critCls}>${idx+1}</td>
+      <td class="rownum" data-edit="${t.id}" title="Edit task"${critCls}>${idx+1}</td>
       <td contenteditable data-f="name" data-id="${t.id}">${t.milestone?'◆ ':''}${esc(t.name)}</td>
-      <td><span class="who" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></td>
+      <td><span contenteditable data-f="owner" data-id="${t.id}" class="ownercell" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></td>
       <td contenteditable data-f="start" data-id="${t.id}">${fmt(t.start)}</td>
       <td contenteditable data-f="finish" data-id="${t.id}">${fmt(t.finish)}</td>
       <td contenteditable data-f="preds" data-id="${t.id}" class="predcell">${predsToRowNums(t)}</td>
-      <td><button class="pill ${cls}" data-status="${t.id}">${lbl}</button></td>
-      <td><div class="bar" title="${t.prog}%"><i style="width:${t.prog}%"></i></div></td>
+      <td><select class="statussel ${cls}" data-id="${t.id}">${STATUS_CYCLE.map(s=>`<option value="${s}"${s===t.status?' selected':''}>${STATUS[s][0]}</option>`).join('')}</select></td>
+      <td><div class="progcell"><input type="number" class="proginput" min="0" max="100" value="${t.prog}" data-id="${t.id}"><div class="bar"><i style="width:${t.prog}%"></i></div></div></td>
       <td><button class="rowdel" data-del="${t.id}" title="Delete">×</button></td>`;
     tb.appendChild(tr);
   });
+  const addtr=document.createElement('tr');addtr.className='addrow';
+  addtr.innerHTML=`<td colspan="9" id="gridAdd">＋ Add task${state.tasks.length?'':' &nbsp;— this project is empty'}</td>`;
+  tb.appendChild(addtr);
+}
+function addBlankTask(){
+  const t={id:nextId(),name:'New task',owner:'?',start:'',finish:'',status:'track',prog:0,milestone:false,preds:[]};
+  state.tasks.push(t);save();renderAll();
+  const cell=document.querySelector(`#gridtbl td[data-f="name"][data-id="${t.id}"]`);
+  if(cell){cell.focus();const r=document.createRange();r.selectNodeContents(cell);const s=getSelection();s.removeAllRanges();s.addRange(r);}
 }
 function esc(s){return String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
 
 document.querySelector('#gridtbl').addEventListener('click',e=>{
   const del=e.target.closest('[data-del]');
   if(del){const id=+del.dataset.del;state.tasks=state.tasks.filter(t=>t.id!==id);save();renderAll();return;}
-  const pill=e.target.closest('[data-status]');
-  if(pill){const t=byId(+pill.dataset.status);const i=STATUS_CYCLE.indexOf(t.status);t.status=STATUS_CYCLE[(i+1)%4];if(t.status==='done')t.prog=100;save();renderAll();}
+  if(e.target.id==='gridAdd'){addBlankTask();return;}
+  const ed=e.target.closest('[data-edit]');
+  if(ed){openModal(byId(+ed.dataset.edit));return;}
+});
+document.querySelector('#gridtbl').addEventListener('change',e=>{
+  const sel=e.target.closest('.statussel');
+  if(sel){const t=byId(+sel.dataset.id);t.status=sel.value;if(t.status==='done')t.prog=100;save();renderAll();return;}
+  const pg=e.target.closest('.proginput');
+  if(pg){const t=byId(+pg.dataset.id);t.prog=Math.min(100,Math.max(0,Math.round(+pg.value)||0));save();renderAll();return;}
 });
 document.querySelector('#gridtbl').addEventListener('blur',e=>{
   const cell=e.target.closest('[contenteditable]');if(!cell)return;
   const t=byId(+cell.dataset.id),f=cell.dataset.f,v=cell.textContent.trim();
-  if(f==='name')t.name=v.replace(/^◆\s*/,'');
-  else if(f==='start'||f==='finish'){const d=parseDate(v);if(d)t[f]=d;}
+  if(f==='name')t.name=v.replace(/^◆\s*/,'')||'Untitled';
+  else if(f==='owner'){t.owner=v.toUpperCase().slice(0,3)||'?';ensureColor(t.owner);}
+  else if(f==='start'||f==='finish'){const d=parseDate(v);if(d)t[f]=d;else if(v==='')t[f]='';}
   else if(f==='preds'){if(!setPreds(t,parsePreds(v,t.id))){alert('That would create a circular dependency — not applied.');}}
   save();renderAll();
 },true);
@@ -541,6 +570,7 @@ function openModal(t){
   document.getElementById('f-status').value=t?t.status:'track';
   document.getElementById('f-prog').value=t?t.prog:0;
   document.getElementById('f-preds').value=t?predsToRowNums(t):'';
+  document.getElementById('f-milestone').checked=t?!!t.milestone:false;
   modal.classList.add('open');
 }
 document.getElementById('addBtn').onclick=()=>openModal(null);
@@ -550,7 +580,8 @@ document.getElementById('saveBtn').onclick=()=>{
   const name=document.getElementById('f-name').value.trim();if(!name){alert('Task name required');return;}
   const data={name,owner:document.getElementById('f-owner').value.trim().toUpperCase()||'?',
     start:document.getElementById('f-start').value,finish:document.getElementById('f-finish').value,
-    status:document.getElementById('f-status').value,prog:Math.min(100,Math.max(0,+document.getElementById('f-prog').value||0))};
+    status:document.getElementById('f-status').value,prog:Math.min(100,Math.max(0,+document.getElementById('f-prog').value||0)),
+    milestone:document.getElementById('f-milestone').checked};
   const predStr=document.getElementById('f-preds').value;
   let target;
   if(editId){target=byId(editId);Object.assign(target,data);}
