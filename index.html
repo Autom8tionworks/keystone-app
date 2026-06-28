@@ -7,6 +7,7 @@
 <meta name="description" content="Keystone — as easy as a spreadsheet, as deep as MS Project, as collaborative as a modern SaaS app.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%235b8cff'/%3E%3Ctext x='50' y='70' font-size='62' text-anchor='middle' fill='white'%3E%E2%97%86%3C/text%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.min.js"></script>
 <style>
   :root{
     --bg:#0f1220;--panel:#171a2b;--panel2:#1e2236;--line:#2a2f4a;
@@ -20,6 +21,11 @@
   .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
   .logo .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:15px}
   .proj{color:var(--muted);font-weight:500;font-size:13px;border-left:1px solid var(--line);padding-left:14px}
+  .projbar{display:flex;align-items:center;gap:4px;border-left:1px solid var(--line);padding-left:12px}
+  #projSelect{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:6px 9px;font-size:13px;font-weight:600;max-width:230px}
+  .hbtn{background:transparent;border:1px solid transparent;color:var(--muted);border-radius:7px;width:30px;height:30px;cursor:pointer;font-size:14px;display:grid;place-items:center}
+  .hbtn:hover{background:var(--panel2);color:var(--txt);border-color:var(--line)}
+  .hsep{width:1px;height:18px;background:var(--line);margin:0 3px}
   .spacer{flex:1}
   .btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 13px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px}
   .btn:hover{border-color:var(--accent)}
@@ -132,7 +138,17 @@
 <body>
 <header>
   <div class="logo"><span class="mark">◆</span> Keystone</div>
-  <div class="proj" id="projName">Drone Inventory Rollout</div>
+  <div class="projbar">
+    <select id="projSelect" title="Switch project"></select>
+    <button class="hbtn" id="newProj" title="New project">＋</button>
+    <button class="hbtn" id="renameProj" title="Rename project">✎</button>
+    <button class="hbtn" id="dupProj" title="Duplicate project">⧉</button>
+    <button class="hbtn" id="delProj" title="Delete project">🗑</button>
+    <span class="hsep"></span>
+    <button class="hbtn" id="expProj" title="Save project to a file">⭳</button>
+    <button class="hbtn" id="impProj" title="Open project from a file">⭱</button>
+    <input type="file" id="projFile" accept=".json,application/json" style="display:none">
+  </div>
   <div class="spacer"></div>
   <div class="avatars">
     <span style="background:#5b8cff">JH</span><span style="background:#7c5cff">AM</span>
@@ -154,6 +170,7 @@
     <button class="btn primary" id="addBtn">+ New task</button>
     <button class="btn" id="importBtn">⭱ Import</button>
     <button class="btn" id="exportBtn">⭳ Export CSV</button>
+    <button class="btn" id="pptxBtn">⎙ PowerPoint</button>
     <button class="btn danger" id="resetBtn">↺ Reset demo data</button>
     <input type="file" id="importFile" accept=".xlsx,.xls,.csv,.xml,.mpp" style="display:none">
   </div>
@@ -235,7 +252,7 @@
 <div class="save-flash" id="flash">Saved ✓</div>
 
 <script>
-const KEY='keystone.v1';
+const KEY='keystone.db.v1';
 const COLORS={JH:'#5b8cff',AM:'#7c5cff',RK:'#37c98a',TS:'#f5b945',ML:'#ff6b6b'};
 const STATUS={track:['On track','s-track'],risk:['At risk','s-risk'],late:['Late','s-late'],done:['Done','s-done']};
 const STATUS_CYCLE=['track','risk','late','done'];
@@ -252,9 +269,17 @@ const SEED=[
   {id:9,name:'Go-live readiness review',owner:'JH',start:'2026-09-04',finish:'2026-09-04',status:'late',prog:0,milestone:true},
 ];
 
-let state=load();
-function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.tasks&&s.tasks.length)return s;}catch(e){}return{tasks:structuredClone(SEED)};}
-function save(){localStorage.setItem(KEY,JSON.stringify(state));flash();}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const newProject=(name,tasks)=>({id:uid(),name:name||'New project',tasks:tasks||[]});
+let DB=loadDB();
+let state=DB.projects.find(p=>p.id===DB.activeId)||DB.projects[0];
+function loadDB(){
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.projects&&s.projects.length)return s;}catch(e){}
+  try{const old=JSON.parse(localStorage.getItem('keystone.v1'));if(old&&old.tasks&&old.tasks.length){const p=newProject('Drone Inventory Rollout',old.tasks);return{projects:[p],activeId:p.id};}}catch(e){}
+  const p=newProject('Drone Inventory Rollout',structuredClone(SEED));
+  return{projects:[p],activeId:p.id};
+}
+function save(){DB.activeId=state.id;localStorage.setItem(KEY,JSON.stringify(DB));flash();}
 function flash(){const f=document.getElementById('flash');f.classList.add('show');clearTimeout(window._ft);window._ft=setTimeout(()=>f.classList.remove('show'),1100);}
 function nextId(){return state.tasks.reduce((m,t)=>Math.max(m,t.id),0)+1;}
 const fmt=d=>{if(!d)return'';const x=new Date(d+'T00:00:00');return x.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
@@ -431,7 +456,7 @@ document.getElementById('exportBtn').onclick=()=>{
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   a.download='keystone-tasks.csv';a.click();
 };
-document.getElementById('resetBtn').onclick=()=>{if(confirm('Reset to demo data? Your changes will be lost.')){state={tasks:structuredClone(SEED)};save();renderAll();}};
+document.getElementById('resetBtn').onclick=()=>{if(confirm('Reset this project to demo data? Your changes will be lost.')){state.tasks=structuredClone(SEED);save();renderAll();}};
 
 /* ---------- IMPORT (Excel / CSV / MS Project XML) ---------- */
 const PALETTE=['#5b8cff','#7c5cff','#37c98a','#f5b945','#ff6b6b','#3fc4d6','#e072c8','#9d7bff','#52b788','#ff9f5b'];
@@ -627,8 +652,121 @@ function pushCands(){
   sowStatus('✓ Pushed '+ok.length+' item'+(ok.length>1?'s':'')+' into the chart. Switching to Gantt…');
   setTimeout(()=>document.querySelector('.tab[data-v="gantt"]').click(),500);
 }
+/* ---------- PROJECTS (multi-project storage) ---------- */
+function renderProjects(){
+  document.getElementById('projSelect').innerHTML=DB.projects.map(p=>`<option value="${p.id}"${p.id===state.id?' selected':''}>${esc(p.name)}</option>`).join('');
+}
+function switchProject(id){const p=DB.projects.find(x=>x.id===id);if(!p)return;state=p;DB.activeId=id;localStorage.setItem(KEY,JSON.stringify(DB));renderProjects();renderAll();}
+document.getElementById('projSelect').onchange=e=>switchProject(e.target.value);
+document.getElementById('newProj').onclick=()=>{const n=prompt('New project name:','Project '+(DB.projects.length+1));if(n===null)return;const p=newProject(n.trim()||'Untitled',[]);DB.projects.push(p);state=p;save();renderProjects();renderAll();};
+document.getElementById('renameProj').onclick=()=>{const n=prompt('Rename project:',state.name);if(n===null)return;state.name=n.trim()||state.name;save();renderProjects();};
+document.getElementById('dupProj').onclick=()=>{const p=newProject(state.name+' (copy)',structuredClone(state.tasks));DB.projects.push(p);state=p;save();renderProjects();renderAll();};
+document.getElementById('delProj').onclick=()=>{if(DB.projects.length<=1){alert('You need at least one project.');return;}if(!confirm('Delete project “'+state.name+'”? This cannot be undone.'))return;DB.projects=DB.projects.filter(p=>p.id!==state.id);state=DB.projects[0];save();renderProjects();renderAll();};
+document.getElementById('expProj').onclick=()=>{
+  const blob=new Blob([JSON.stringify({app:'keystone',version:1,name:state.name,tasks:state.tasks},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=state.name.replace(/[^a-z0-9]+/gi,'_').toLowerCase()+'.keystone.json';a.click();
+};
+document.getElementById('impProj').onclick=()=>document.getElementById('projFile').click();
+document.getElementById('projFile').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+  rd.onload=()=>{try{
+    const d=JSON.parse(rd.result);
+    const tasks=Array.isArray(d.tasks)?d.tasks:(Array.isArray(d)?d:null);
+    if(!tasks)throw new Error('no tasks found in file');
+    let i=1;const clean=tasks.filter(t=>t&&t.name).map(t=>({id:i++,name:String(t.name),owner:(t.owner||'?'),start:t.start||'',finish:t.finish||'',status:t.status||'track',prog:Math.min(100,Math.max(0,+t.prog||0)),milestone:!!t.milestone}));
+    clean.forEach(t=>ensureColor(t.owner));
+    const p=newProject(d.name||f.name.replace(/\.[^.]+$/,''),clean);
+    DB.projects.push(p);state=p;save();renderProjects();renderAll();
+  }catch(err){alert('Could not open project file: '+err.message);}};
+  rd.readAsText(f);e.target.value='';
+};
+
+/* ---------- POWERPOINT EXPORT (active view) ---------- */
+document.getElementById('pptxBtn').onclick=()=>exportPPTX();
+function exportPPTX(){
+  if(typeof PptxGenJS==='undefined'){alert('PowerPoint library is still loading — try again in a second.');return;}
+  const view=document.querySelector('.tab.active').dataset.v;
+  if(view==='sow'){alert('Switch to Grid, Gantt, Board or Dashboard to export that view.');return;}
+  const pptx=new PptxGenJS();pptx.layout='LAYOUT_WIDE';
+  const titles={grid:'Task Grid',gantt:'Gantt Timeline',board:'Board',dash:'Dashboard'};
+  const s=pptx.addSlide();s.background={color:'0F1220'};
+  s.addText('Keystone',{x:0.6,y:2.3,w:12,h:0.9,fontSize:44,bold:true,color:'5B8CFF'});
+  s.addText(state.name,{x:0.6,y:3.3,w:12,h:0.7,fontSize:26,color:'FFFFFF'});
+  s.addText((titles[view]||'')+'  ·  '+new Date().toLocaleDateString(),{x:0.6,y:4.1,w:12,h:0.4,fontSize:14,color:'9AA0BD'});
+  if(view==='grid')slideGrid(pptx);
+  else if(view==='gantt')slideGantt(pptx);
+  else if(view==='board')slideBoard(pptx);
+  else if(view==='dash')slideDash(pptx);
+  pptx.writeFile({fileName:'keystone-'+state.name.replace(/[^a-z0-9]+/gi,'_').toLowerCase()+'-'+view+'.pptx'});
+}
+function slideGrid(pptx){
+  const s=pptx.addSlide();s.background={color:'0F1220'};
+  s.addText(state.name+' — Tasks',{x:0.4,y:0.25,w:12.5,h:0.5,fontSize:20,bold:true,color:'FFFFFF'});
+  const head=['Task','Owner','Start','Finish','Status','%'].map(h=>({text:h,options:{bold:true,color:'FFFFFF',fill:'5B8CFF'}}));
+  const rows=[head];
+  state.tasks.forEach(t=>rows.push([
+    (t.milestone?'◆ ':'')+t.name,t.owner||'',fmt(t.start),fmt(t.finish),(STATUS[t.status]||STATUS.track)[0],t.prog+'%'
+  ].map(v=>({text:String(v),options:{color:'E7E9F3',fill:'1E2236'}}))));
+  s.addTable(rows,{x:0.4,y:0.85,w:12.5,colW:[5.7,1.2,1.5,1.5,1.8,0.8],fontSize:11,border:{type:'solid',color:'2A2F4A',pt:1},valign:'middle',autoPage:true});
+}
+function slideGantt(pptx){
+  const s=pptx.addSlide();s.background={color:'0F1220'};
+  s.addText(state.name+' — Timeline',{x:0.4,y:0.25,w:12.5,h:0.5,fontSize:20,bold:true,color:'FFFFFF'});
+  const ds=state.tasks.flatMap(t=>[t.start,t.finish]).filter(Boolean).map(d=>new Date(d)).filter(d=>!isNaN(d));
+  if(!ds.length){s.addText('No dated tasks.',{x:0.4,y:1,fontSize:14,color:'9AA0BD'});return;}
+  const min=new Date(Math.min(...ds)),max=new Date(Math.max(...ds));
+  const total=Math.max(1,(max-min)/864e5);
+  const x0=4.2,wArea=8.4,y0=1.0,rowH=Math.min(0.45,6.3/Math.max(1,state.tasks.length));
+  state.tasks.forEach((t,i)=>{
+    const y=y0+i*rowH;
+    s.addText((t.milestone?'◆ ':'')+t.name,{x:0.3,y:y,w:3.7,h:rowH,fontSize:9,color:'E7E9F3',valign:'middle'});
+    const st=new Date(t.start);if(isNaN(st))return;
+    const fn=isNaN(new Date(t.finish))?st:new Date(t.finish);
+    const bx=x0+((st-min)/864e5)/total*wArea;
+    const bw=Math.max(0.12,((fn-st)/864e5)/total*wArea);
+    const col=t.status==='done'?'5B8CFF':(t.status==='late'||t.status==='risk')?'FF7A59':'37C98A';
+    if(t.milestone)s.addShape(pptx.ShapeType.diamond,{x:bx-0.1,y:y+rowH*0.15,w:0.2,h:rowH*0.7,fill:{color:'F5B945'}});
+    else s.addShape(pptx.ShapeType.roundRect,{x:bx,y:y+rowH*0.18,w:bw,h:rowH*0.62,fill:{color:col},rectRadius:0.03,line:{type:'none'}});
+  });
+}
+function slideBoard(pptx){
+  const s=pptx.addSlide();s.background={color:'0F1220'};
+  s.addText(state.name+' — Board',{x:0.4,y:0.25,w:12.5,h:0.5,fontSize:20,bold:true,color:'FFFFFF'});
+  ['Backlog','In progress','Review','Done'].forEach((c,i)=>{
+    const x=0.4+i*3.15;
+    s.addShape(pptx.ShapeType.roundRect,{x:x,y:0.95,w:2.95,h:6.1,fill:{color:'171A2B'},line:{color:'2A2F4A',width:1},rectRadius:0.04});
+    const items=state.tasks.filter(t=>boardKey(t)===c);
+    s.addText(c+'  ('+items.length+')',{x:x+0.15,y:1.05,w:2.65,h:0.35,fontSize:12,bold:true,color:'FFFFFF'});
+    let y=1.55;items.forEach(t=>{if(y>6.6)return;
+      s.addShape(pptx.ShapeType.roundRect,{x:x+0.13,y:y,w:2.69,h:0.55,fill:{color:'1E2236'},line:{color:'2A2F4A',width:1},rectRadius:0.03});
+      s.addText((t.milestone?'◆ ':'')+t.name,{x:x+0.22,y:y+0.04,w:2.5,h:0.47,fontSize:9,color:'E7E9F3',valign:'middle'});y+=0.65;});
+  });
+}
+function slideDash(pptx){
+  const s=pptx.addSlide();s.background={color:'0F1220'};
+  s.addText(state.name+' — Dashboard',{x:0.4,y:0.25,w:12.5,h:0.5,fontSize:20,bold:true,color:'FFFFFF'});
+  const ts=state.tasks,n=ts.length||1;
+  const done=ts.filter(t=>t.status==='done').length,risk=ts.filter(t=>t.status==='risk'||t.status==='late').length;
+  const avg=Math.round(ts.reduce((a,t)=>a+(+t.prog||0),0)/n);
+  [['Avg progress',avg+'%'],['Completed',done+'/'+ts.length],['At risk / late',String(risk)],['Milestones',String(ts.filter(t=>t.milestone).length)]].forEach((k,i)=>{
+    const x=0.4+i*3.15;
+    s.addShape(pptx.ShapeType.roundRect,{x:x,y:0.95,w:2.9,h:1.4,fill:{color:'1E2236'},line:{color:'2A2F4A',width:1},rectRadius:0.06});
+    s.addText(k[0].toUpperCase(),{x:x+0.15,y:1.1,w:2.6,h:0.3,fontSize:10,color:'9AA0BD'});
+    s.addText(k[1],{x:x+0.15,y:1.45,w:2.6,h:0.7,fontSize:30,bold:true,color:'FFFFFF'});
+  });
+  s.addText('Progress by task',{x:0.4,y:2.7,w:6,h:0.4,fontSize:14,bold:true,color:'FFFFFF'});
+  const y0=3.2,rh=Math.min(0.4,3.8/Math.max(1,ts.length));
+  ts.forEach((t,i)=>{const y=y0+i*rh;if(y>7)return;
+    s.addText(t.name,{x:0.4,y:y,w:3.9,h:rh,fontSize:9,color:'E7E9F3',valign:'middle'});
+    s.addShape(pptx.ShapeType.roundRect,{x:4.4,y:y+rh*0.2,w:7.4,h:rh*0.5,fill:{color:'2A2F4A'},rectRadius:0.02,line:{type:'none'}});
+    s.addShape(pptx.ShapeType.roundRect,{x:4.4,y:y+rh*0.2,w:Math.max(0.05,7.4*(t.prog/100)),h:rh*0.5,fill:{color:'5B8CFF'},rectRadius:0.02,line:{type:'none'}});
+    s.addText(t.prog+'%',{x:11.95,y:y,w:0.9,h:rh,fontSize:9,color:'9AA0BD',valign:'middle'});
+  });
+}
+
 function renderAll(){renderGrid();renderGantt();renderBoard();renderDash();}
-renderAll();
+renderProjects();renderAll();
 </script>
 </body>
 </html>
