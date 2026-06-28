@@ -56,6 +56,19 @@ No build step is required — Vercel serves `index.html` directly.
 
 **Isn't (yet):** a shared backend. Data lives in *your* browser only — it isn't synced between people or devices, and there's no login. That's the next step (Supabase: auth + Postgres + realtime), which needs a Supabase account to wire up.
 
+## AI "Scope of Work → Plan" — one-time setup
+
+The **SOW → Plan** tab sends pasted scope-of-work text to Claude (via the `api/analyze.js` serverless function) and proposes milestones you can review, edit, approve/reject, and push into the chart. The Anthropic API key stays on the server — the browser never sees it.
+
+To turn it on:
+
+1. Get an API key from the Anthropic Console (`https://console.anthropic.com` → API Keys).
+2. In Vercel: open the **keystone-app** project → **Settings → Environment Variables**.
+3. Add a variable named `ANTHROPIC_API_KEY` with your key as the value (apply to Production). Optionally add `ANTHROPIC_MODEL` (defaults to `claude-sonnet-4-6`).
+4. **Redeploy** (Deployments → ⋯ → Redeploy) so the new variable is picked up.
+
+Until the key is set, the SOW tab still loads, but Analyze returns a friendly "AI is not configured yet" message.
+
 ## Next step — turn it into a real product
 
 When you're ready to move from prototype to MVP (per **Phase 1** in `Keystone_Framework.md`):

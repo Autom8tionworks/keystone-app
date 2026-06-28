@@ -107,6 +107,26 @@
   footer{color:var(--muted);font-size:12px;text-align:center;padding:22px}
   .ctabar{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--muted)}
   .ctabar b{color:var(--txt)}
+  /* SOW */
+  #sowText{width:100%;min-height:190px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:14px;font-size:13px;font-family:inherit;line-height:1.5;resize:vertical}
+  #sowText:focus{outline:2px solid var(--accent)}
+  .cand{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--green);border-radius:10px;padding:12px 14px;margin-bottom:10px;display:flex;gap:14px;align-items:flex-start}
+  .cand.rejected{border-left-color:var(--red);opacity:.5}
+  .cand-main{flex:1;min-width:0}
+  .cand-name{width:100%;background:transparent;border:none;color:var(--txt);font-size:14px;font-weight:600;padding:2px 0;border-bottom:1px solid transparent}
+  .cand-name:focus{outline:none;border-bottom:1px solid var(--accent)}
+  .cand-meta{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .cand-meta select,.cand-meta input{background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--txt);font-size:12px;padding:4px 7px}
+  .cand-meta input[type=date]{color-scheme:dark}
+  .cand-owner{width:64px;text-transform:uppercase}
+  .cand-note{color:var(--muted);font-size:11.5px;margin-top:7px;font-style:italic}
+  .cand-actions{display:flex;flex-direction:column;gap:6px}
+  .cand-actions .btn{padding:5px 12px;font-size:12px}
+  .approve.on{background:var(--green);border-color:var(--green);color:#04150d}
+  .reject.on{background:var(--red);border-color:var(--red);color:#fff}
+  .sow-pushbar{display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -125,6 +145,7 @@
   <div class="tab" data-v="gantt">▭ Gantt</div>
   <div class="tab" data-v="board">▤ Board</div>
   <div class="tab" data-v="dash">◷ Dashboard</div>
+  <div class="tab" data-v="sow">✦ SOW → Plan</div>
 </div>
 
 <main>
@@ -164,6 +185,17 @@
       <div class="panel"><h3>Progress by task</h3><div class="barsrow" id="bars"></div></div>
       <div class="panel"><h3>Work by status</h3><div class="donut"><svg width="150" height="150" viewBox="0 0 42 42" id="donut"></svg><div class="leglist" id="donutleg"></div></div></div>
     </div>
+  </section>
+
+  <section class="view" id="sow">
+    <h2>Scope of Work → Plan</h2>
+    <p class="sub">Paste a scope of work. Claude reads it and proposes milestones &amp; deliverables — review, edit, approve or reject each one, then push the approved items straight into your chart.</p>
+    <textarea id="sowText" placeholder="Paste your scope of work here…&#10;&#10;e.g. The vendor shall deliver 50 drone units within 3 weeks of the July 6 2026 kickoff. A warehouse readiness review is required by August 14. Go-live sign-off no later than September 4 2026…"></textarea>
+    <div class="toolbar" style="margin-top:10px">
+      <button class="btn primary" id="analyzeBtn">✦ Analyze with Claude</button>
+      <span id="sowStatus" class="hint" style="margin:0;align-self:center"></span>
+    </div>
+    <div id="sowResults"></div>
   </section>
 </main>
 
@@ -265,8 +297,8 @@ const byId=id=>state.tasks.find(t=>t.id===id);
 /* ---------- GANTT ---------- */
 function renderGantt(){
   const wrap=document.getElementById('ganttwrap');
-  const dates=state.tasks.flatMap(t=>[t.start,t.finish]).filter(Boolean).map(d=>new Date(d));
-  if(!dates.length){wrap.innerHTML='<p style="padding:16px;color:var(--muted)">No dated tasks.</p>';return;}
+  const dates=state.tasks.flatMap(t=>[t.start,t.finish]).filter(Boolean).map(d=>new Date(d)).filter(d=>!isNaN(d));
+  if(!dates.length){wrap.innerHTML='<p style="padding:16px;color:var(--muted)">No dated tasks yet.</p>';return;}
   let min=new Date(Math.min(...dates)),max=new Date(Math.max(...dates));
   min.setDate(min.getDate()-min.getDay());           // snap to week start
   const totalDays=Math.max(7,(max-min)/864e5+7);
@@ -277,12 +309,15 @@ function renderGantt(){
   let rows='';
   state.tasks.forEach(t=>{
     const s=new Date(t.start),f=new Date(t.finish);
-    const left=((s-min)/864e5)/totalDays*100;
-    const width=Math.max(1.5,((f-s)/864e5+1)/totalDays*100);
-    const crit=t.status==='late'||t.status==='risk';
-    let bar;
-    if(t.milestone)bar=`<div class="gmile" style="left:${Math.max(0,left)}%"></div>`;
-    else bar=`<div class="gbar ${crit?'crit':''} ${t.status==='done'?'done':''}" style="left:${left}%;width:${width}%">${esc(t.name).slice(0,20)}</div>`;
+    let bar='<span style="color:var(--muted);font-size:11px;padding-left:10px;line-height:38px">— no date set —</span>';
+    if(!isNaN(s)){
+      const fin=isNaN(f)?s:f;
+      const left=((s-min)/864e5)/totalDays*100;
+      const width=Math.max(1.5,((fin-s)/864e5+1)/totalDays*100);
+      const crit=t.status==='late'||t.status==='risk';
+      if(t.milestone)bar=`<div class="gmile" style="left:${Math.max(0,left)}%"></div>`;
+      else bar=`<div class="gbar ${crit?'crit':''} ${t.status==='done'?'done':''}" style="left:${left}%;width:${width}%">${esc(t.name).slice(0,20)}</div>`;
+    }
     rows+=`<div class="gantt-row"><div class="g-name">${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="g-track">${bar}</div></div>`;
   });
   wrap.innerHTML=head+rows;
@@ -506,7 +541,92 @@ document.getElementById('tabs').addEventListener('click',e=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
   t.classList.add('active');document.getElementById(t.dataset.v).classList.add('active');
+  const isSow=t.dataset.v==='sow';
+  document.querySelector('.toolbar').style.display=isSow?'none':'flex';
+  document.querySelector('.ctabar').style.display=isSow?'none':'flex';
 });
+
+/* ---------- SOW → AI → review → push ---------- */
+let _cands=[];
+const sowStatus=m=>document.getElementById('sowStatus').innerHTML=m;
+document.getElementById('analyzeBtn').onclick=async()=>{
+  const sow=document.getElementById('sowText').value.trim();
+  if(sow.length<10){sowStatus('⚠ Paste a longer scope of work first.');return;}
+  const btn=document.getElementById('analyzeBtn');btn.disabled=true;
+  sowStatus('<span class="spin"></span>Analyzing with Claude…');
+  document.getElementById('sowResults').innerHTML='';
+  try{
+    const r=await fetch('/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sow})});
+    const data=await r.json().catch(()=>({error:'Unexpected response from server.'}));
+    if(!r.ok){sowStatus('⚠ '+(data.error||('Error '+r.status)));return;}
+    _cands=(data.milestones||[]).map(m=>({
+      name:(m.name||'Untitled').slice(0,120),
+      type:m.type==='task'?'task':'milestone',
+      start:/^\d{4}-\d{2}-\d{2}$/.test(m.start)?m.start:'',
+      finish:/^\d{4}-\d{2}-\d{2}$/.test(m.finish)?m.finish:'',
+      owner:(m.owner||'').toUpperCase().slice(0,3),
+      note:m.note||'',status:'approved'}));
+    if(!_cands.length){sowStatus('No milestones found — try a more detailed SOW.');return;}
+    sowStatus('Found '+_cands.length+' item'+(_cands.length>1?'s':'')+'. Review, edit, then push the approved ones.');
+    renderCands();
+  }catch(err){sowStatus('⚠ Network error: '+err.message);}
+  finally{btn.disabled=false;}
+};
+function renderCands(){
+  const wrap=document.getElementById('sowResults');
+  if(!_cands.length){wrap.innerHTML='';return;}
+  let html='';
+  _cands.forEach((c,i)=>{
+    const rej=c.status==='rejected';
+    html+=`<div class="cand ${rej?'rejected':''}" data-i="${i}">
+      <div class="cand-main">
+        <input class="cand-name" data-i="${i}" value="${esc(c.name).replace(/"/g,'&quot;')}">
+        <div class="cand-meta">
+          <select class="cand-type" data-i="${i}">
+            <option value="milestone"${c.type==='milestone'?' selected':''}>◆ Milestone</option>
+            <option value="task"${c.type==='task'?' selected':''}>▭ Task</option>
+          </select>
+          <input type="date" class="cand-start" data-i="${i}" value="${c.start}" title="Start">
+          <input type="date" class="cand-finish" data-i="${i}" value="${c.finish}" title="Finish">
+          <input class="cand-owner" data-i="${i}" value="${esc(c.owner)}" placeholder="Owner" maxlength="3">
+        </div>
+        ${c.note?`<div class="cand-note">Claude: ${esc(c.note)}</div>`:''}
+      </div>
+      <div class="cand-actions">
+        <button class="btn approve ${!rej?'on':''}" data-app="${i}">Approve</button>
+        <button class="btn reject ${rej?'on':''}" data-rej="${i}">Reject</button>
+      </div>
+    </div>`;
+  });
+  const okCount=_cands.filter(c=>c.status==='approved').length;
+  html+=`<div class="sow-pushbar"><span class="hint" style="margin:0">${okCount} of ${_cands.length} approved</span>
+    <button class="btn primary" id="pushBtn">⤵ Push ${okCount} approved into chart</button></div>`;
+  wrap.innerHTML=html;
+
+  wrap.querySelectorAll('.cand-name').forEach(el=>el.oninput=e=>_cands[+e.target.dataset.i].name=e.target.value);
+  wrap.querySelectorAll('.cand-type').forEach(el=>el.onchange=e=>_cands[+e.target.dataset.i].type=e.target.value);
+  wrap.querySelectorAll('.cand-start').forEach(el=>el.onchange=e=>_cands[+e.target.dataset.i].start=e.target.value);
+  wrap.querySelectorAll('.cand-finish').forEach(el=>el.onchange=e=>_cands[+e.target.dataset.i].finish=e.target.value);
+  wrap.querySelectorAll('.cand-owner').forEach(el=>el.oninput=e=>_cands[+e.target.dataset.i].owner=e.target.value.toUpperCase());
+  wrap.querySelectorAll('[data-app]').forEach(el=>el.onclick=e=>{_cands[+el.dataset.app].status='approved';renderCands();});
+  wrap.querySelectorAll('[data-rej]').forEach(el=>el.onclick=e=>{_cands[+el.dataset.rej].status='rejected';renderCands();});
+  const pb=document.getElementById('pushBtn');if(pb)pb.onclick=pushCands;
+}
+function pushCands(){
+  const ok=_cands.filter(c=>c.status==='approved'&&c.name.trim());
+  if(!ok.length){alert('No approved items to push.');return;}
+  ok.forEach(c=>{
+    ensureColor(c.owner);
+    const isM=c.type==='milestone';
+    state.tasks.push({id:nextId(),name:c.name.trim(),owner:c.owner||'?',
+      start:c.start||'',finish:isM?(c.start||''):(c.finish||c.start||''),
+      status:'track',prog:0,milestone:isM});
+  });
+  save();renderAll();
+  _cands=[];document.getElementById('sowResults').innerHTML='';
+  sowStatus('✓ Pushed '+ok.length+' item'+(ok.length>1?'s':'')+' into the chart. Switching to Gantt…');
+  setTimeout(()=>document.querySelector('.tab[data-v="gantt"]').click(),500);
+}
 function renderAll(){renderGrid();renderGantt();renderBoard();renderDash();}
 renderAll();
 </script>
