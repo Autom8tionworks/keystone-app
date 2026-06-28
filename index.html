@@ -12,7 +12,7 @@
   :root{
     --bg:#0f1220;--panel:#171a2b;--panel2:#1e2236;--line:#2a2f4a;
     --txt:#e7e9f3;--muted:#9aa0bd;--accent:#5b8cff;--accent2:#7c5cff;
-    --green:#37c98a;--amber:#f5b945;--red:#ff6b6b;--chip:#222843;
+    --green:#37c98a;--amber:#f5b945;--red:#ff6b6b;--chip:#222843;--crit:#ff7a59;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
@@ -113,6 +113,10 @@
   footer{color:var(--muted);font-size:12px;text-align:center;padding:22px}
   .ctabar{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--muted)}
   .ctabar b{color:var(--txt)}
+  .rownum{color:var(--muted);font-size:12px;text-align:center}
+  .predcell{color:var(--muted);font-size:12px}
+  .predcell:focus{color:var(--txt)}
+  .gmile.mcrit{background:var(--crit)}
   /* SOW */
   #sowText{width:100%;min-height:190px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:14px;font-size:13px;font-family:inherit;line-height:1.5;resize:vertical}
   #sowText:focus{outline:2px solid var(--accent)}
@@ -178,19 +182,20 @@
   <section class="view active" id="grid">
     <table id="gridtbl">
       <thead><tr>
-        <th style="width:32%">Task</th><th>Owner</th><th>Start</th><th>Finish</th><th>Status</th><th style="width:13%">Progress</th><th></th>
+        <th style="width:30px">#</th><th style="width:27%">Task</th><th>Owner</th><th>Start</th><th>Finish</th><th title="Predecessor row numbers">Preds</th><th>Status</th><th style="width:12%">Progress</th><th></th>
       </tr></thead>
       <tbody></tbody>
     </table>
-    <p class="hint">Click a Task, Start, Finish or Progress cell to edit. Click a status pill to cycle it. Hover a row to delete.</p>
+    <p class="hint">Click any cell to edit. <b>Preds</b> = predecessor row numbers (e.g. <code>2, 4</code>) — dependent tasks auto-reschedule and the critical path turns red. Click a status pill to cycle it; hover a row to delete.</p>
   </section>
 
   <section class="view" id="gantt">
     <div class="gantt" id="ganttwrap"></div>
     <div class="legend">
       <span><i style="background:linear-gradient(90deg,#5b8cff,#7c5cff)"></i>Task</span>
-      <span><i style="background:linear-gradient(90deg,#ff7a59,#ff5b8a)"></i>Critical / late</span>
+      <span><i style="background:linear-gradient(90deg,#ff7a59,#ff5b8a)"></i>Critical path</span>
       <span><i style="background:#f5b945;border-radius:2px"></i>Milestone</span>
+      <span><i style="background:#6b7290"></i>→ Dependency</span>
     </div>
   </section>
 
@@ -226,6 +231,7 @@
     <div class="field"><label>Owner (initials)</label><input id="f-owner" maxlength="3" placeholder="JH"></div>
     <div class="field"><label>Start date</label><input id="f-start" type="date"></div>
     <div class="field"><label>Finish date</label><input id="f-finish" type="date"></div>
+    <div class="field"><label>Predecessors (row #s, e.g. 2, 4)</label><input id="f-preds" placeholder="leave blank if none"></div>
     <div class="field"><label>Status</label>
       <select id="f-status"><option value="track">On track</option><option value="risk">At risk</option><option value="late">Late</option><option value="done">Done</option></select>
     </div>
@@ -258,16 +264,59 @@ const STATUS={track:['On track','s-track'],risk:['At risk','s-risk'],late:['Late
 const STATUS_CYCLE=['track','risk','late','done'];
 
 const SEED=[
-  {id:1,name:'Vendor selection',owner:'JH',start:'2026-07-06',finish:'2026-07-13',status:'done',prog:100},
-  {id:2,name:'Purchase order approved',owner:'AM',start:'2026-07-14',finish:'2026-07-14',status:'done',prog:100,milestone:true},
-  {id:3,name:'Drone units delivered',owner:'RK',start:'2026-07-15',finish:'2026-07-24',status:'track',prog:80},
-  {id:4,name:'Install charging docks',owner:'RK',start:'2026-07-20',finish:'2026-08-01',status:'track',prog:60},
-  {id:5,name:'Network & sensor mesh',owner:'TS',start:'2026-07-27',finish:'2026-08-14',status:'risk',prog:30},
-  {id:6,name:'Inventory API hookup',owner:'AM',start:'2026-08-10',finish:'2026-08-24',status:'track',prog:25},
-  {id:7,name:'Spend forecast model',owner:'JH',start:'2026-08-17',finish:'2026-08-28',status:'track',prog:10},
-  {id:8,name:'Field staff training',owner:'ML',start:'2026-08-24',finish:'2026-09-02',status:'track',prog:0},
-  {id:9,name:'Go-live readiness review',owner:'JH',start:'2026-09-04',finish:'2026-09-04',status:'late',prog:0,milestone:true},
+  {id:1,name:'Vendor selection',owner:'JH',start:'2026-07-06',finish:'2026-07-13',status:'done',prog:100,preds:[]},
+  {id:2,name:'Purchase order approved',owner:'AM',start:'2026-07-14',finish:'2026-07-14',status:'done',prog:100,milestone:true,preds:[1]},
+  {id:3,name:'Drone units delivered',owner:'RK',start:'2026-07-15',finish:'2026-07-24',status:'track',prog:80,preds:[2]},
+  {id:4,name:'Install charging docks',owner:'RK',start:'2026-07-20',finish:'2026-08-01',status:'track',prog:60,preds:[2]},
+  {id:5,name:'Network & sensor mesh',owner:'TS',start:'2026-07-27',finish:'2026-08-14',status:'risk',prog:30,preds:[4]},
+  {id:6,name:'Inventory API hookup',owner:'AM',start:'2026-08-10',finish:'2026-08-24',status:'track',prog:25,preds:[5]},
+  {id:7,name:'Spend forecast model',owner:'JH',start:'2026-08-17',finish:'2026-08-28',status:'track',prog:10,preds:[3]},
+  {id:8,name:'Field staff training',owner:'ML',start:'2026-08-24',finish:'2026-09-02',status:'track',prog:0,preds:[6]},
+  {id:9,name:'Go-live readiness review',owner:'JH',start:'2026-09-04',finish:'2026-09-04',status:'late',prog:0,milestone:true,preds:[6,8]},
 ];
+
+/* ---------- CRITICAL PATH ENGINE (CPM) ---------- */
+let CPM={};
+function reschedule(){
+  const ts=state.tasks; CPM={};
+  if(!ts.length)return true;
+  const DAY=864e5, EPOCH=Date.UTC(2020,0,1);
+  const toDay=iso=>{if(!iso)return null;const d=new Date(iso);return isNaN(d)?null:Math.round((Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())-EPOCH)/DAY);};
+  const toISO=n=>new Date(EPOCH+n*DAY).toISOString().slice(0,10);
+  const byid={};ts.forEach(t=>byid[t.id]=t);
+  const dur={};ts.forEach(t=>{if(t.milestone){dur[t.id]=0;return;}const s=toDay(t.start),f=toDay(t.finish);dur[t.id]=(s!=null&&f!=null)?Math.max(1,f-s+1):1;});
+  const preds={},succs={};
+  ts.forEach(t=>{preds[t.id]=(t.preds||[]).filter(p=>byid[p]&&p!==t.id);succs[t.id]=[];});
+  ts.forEach(t=>preds[t.id].forEach(p=>succs[p].push(t.id)));
+  const indeg={};ts.forEach(t=>indeg[t.id]=preds[t.id].length);
+  const q=ts.filter(t=>indeg[t.id]===0).map(t=>t.id),order=[];
+  while(q.length){const id=q.shift();order.push(id);succs[id].forEach(s=>{if(--indeg[s]===0)q.push(s);});}
+  if(order.length!==ts.length)return false;                       // cycle → bail, keep manual dates
+  const starts=ts.map(t=>toDay(t.start)).filter(v=>v!=null);
+  const base=starts.length?Math.min(...starts):Math.round((Date.now()-EPOCH)/DAY);
+  const ES={},EF={};
+  order.forEach(id=>{const t=byid[id];let es;
+    if(preds[id].length)es=Math.max(...preds[id].map(p=>EF[p]+1));
+    else{const own=toDay(t.start);es=own!=null?own:base;}
+    ES[id]=es;EF[id]=es+(dur[id]>0?dur[id]-1:0);});
+  const projEnd=Math.max(...order.map(id=>EF[id]));
+  const LF={},LS={};
+  [...order].reverse().forEach(id=>{let lf=succs[id].length?Math.min(...succs[id].map(s=>LS[s]-1)):projEnd;LF[id]=lf;LS[id]=lf-(dur[id]>0?dur[id]-1:0);});
+  let changed=false;
+  order.forEach(id=>{const slack=LS[id]-ES[id];CPM[id]={es:ES[id],ef:EF[id],slack,critical:slack<=0};
+    const t=byid[id];
+    if(preds[id].length){const ns=toISO(ES[id]),nf=toISO(EF[id]);if(t.start!==ns||t.finish!==nf){t.start=ns;t.finish=nf;changed=true;}}});
+  if(changed)try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){}
+  return true;
+}
+const predsToRowNums=t=>(t.preds||[]).map(pid=>{const i=state.tasks.findIndex(x=>x.id===pid);return i>=0?i+1:null;}).filter(Boolean).join(', ');
+function parsePreds(str,selfId){
+  const nums=String(str).match(/\d+/g)||[];
+  const ids=[];nums.forEach(n=>{const t=state.tasks[(+n)-1];if(t&&t.id!==selfId&&!ids.includes(t.id))ids.push(t.id);});
+  return ids;
+}
+// set predecessors with a circular-dependency guard; returns false if it would create a cycle
+function setPreds(t,ids){const old=t.preds||[];t.preds=ids;if(reschedule()===false){t.preds=old;reschedule();return false;}return true;}
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const newProject=(name,tasks)=>({id:uid(),name:name||'New project',tasks:tasks||[]});
@@ -287,14 +336,17 @@ const fmt=d=>{if(!d)return'';const x=new Date(d+'T00:00:00');return x.toLocaleDa
 /* ---------- GRID ---------- */
 function renderGrid(){
   const tb=document.querySelector('#gridtbl tbody');tb.innerHTML='';
-  state.tasks.forEach(t=>{
+  state.tasks.forEach((t,idx)=>{
     const [lbl,cls]=STATUS[t.status]||STATUS.track;
+    const c=CPM[t.id];const critCls=c&&c.critical?' style="color:var(--crit);font-weight:700"':'';
     const tr=document.createElement('tr');
     tr.innerHTML=`
+      <td class="rownum"${critCls}>${idx+1}</td>
       <td contenteditable data-f="name" data-id="${t.id}">${t.milestone?'◆ ':''}${esc(t.name)}</td>
       <td><span class="who" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></td>
       <td contenteditable data-f="start" data-id="${t.id}">${fmt(t.start)}</td>
       <td contenteditable data-f="finish" data-id="${t.id}">${fmt(t.finish)}</td>
+      <td contenteditable data-f="preds" data-id="${t.id}" class="predcell">${predsToRowNums(t)}</td>
       <td><button class="pill ${cls}" data-status="${t.id}">${lbl}</button></td>
       <td><div class="bar" title="${t.prog}%"><i style="width:${t.prog}%"></i></div></td>
       <td><button class="rowdel" data-del="${t.id}" title="Delete">×</button></td>`;
@@ -314,7 +366,8 @@ document.querySelector('#gridtbl').addEventListener('blur',e=>{
   const t=byId(+cell.dataset.id),f=cell.dataset.f,v=cell.textContent.trim();
   if(f==='name')t.name=v.replace(/^◆\s*/,'');
   else if(f==='start'||f==='finish'){const d=parseDate(v);if(d)t[f]=d;}
-  save();renderGantt();renderDash();
+  else if(f==='preds'){if(!setPreds(t,parsePreds(v,t.id))){alert('That would create a circular dependency — not applied.');}}
+  save();renderAll();
 },true);
 function parseDate(s){const d=new Date(s+' 2026');if(!isNaN(d))return d.toISOString().slice(0,10);const d2=new Date(s);return isNaN(d2)?null:d2.toISOString().slice(0,10);}
 const byId=id=>state.tasks.find(t=>t.id===id);
@@ -332,20 +385,37 @@ function renderGantt(){
   for(let i=0;i<weeks;i++){const d=new Date(min);d.setDate(d.getDate()+i*7);head+=`<span>${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`;}
   head+='</div></div>';
   let rows='';
-  state.tasks.forEach(t=>{
+  state.tasks.forEach((t,idx)=>{
     const s=new Date(t.start),f=new Date(t.finish);
     let bar='<span style="color:var(--muted);font-size:11px;padding-left:10px;line-height:38px">— no date set —</span>';
     if(!isNaN(s)){
       const fin=isNaN(f)?s:f;
       const left=((s-min)/864e5)/totalDays*100;
       const width=Math.max(1.5,((fin-s)/864e5+1)/totalDays*100);
-      const crit=t.status==='late'||t.status==='risk';
-      if(t.milestone)bar=`<div class="gmile" style="left:${Math.max(0,left)}%"></div>`;
-      else bar=`<div class="gbar ${crit?'crit':''} ${t.status==='done'?'done':''}" style="left:${left}%;width:${width}%">${esc(t.name).slice(0,20)}</div>`;
+      const crit=!!(CPM[t.id]&&CPM[t.id].critical);
+      if(t.milestone)bar=`<div class="gmile ${crit?'mcrit':''}" data-bar="${t.id}" style="left:${Math.max(0,left)}%"></div>`;
+      else bar=`<div class="gbar ${crit?'crit':''} ${t.status==='done'?'done':''}" data-bar="${t.id}" style="left:${left}%;width:${width}%">${esc(t.name).slice(0,20)}</div>`;
     }
-    rows+=`<div class="gantt-row"><div class="g-name">${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="g-track">${bar}</div></div>`;
+    rows+=`<div class="gantt-row"><div class="g-name">${idx+1}. ${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="g-track">${bar}</div></div>`;
   });
   wrap.innerHTML=head+rows;
+  drawArrows(wrap);
+}
+function drawArrows(wrap){
+  wrap.style.position='relative';
+  const wr=wrap.getBoundingClientRect();
+  const pos=id=>{const el=wrap.querySelector(`[data-bar="${id}"]`);if(!el)return null;const r=el.getBoundingClientRect();
+    return{l:r.left-wr.left+wrap.scrollLeft,r:r.right-wr.left+wrap.scrollLeft,m:r.top-wr.top+wrap.scrollTop+r.height/2};};
+  let paths='';
+  state.tasks.forEach(t=>{(t.preds||[]).forEach(pid=>{
+    const a=pos(pid),b=pos(t.id);if(!a||!b)return;
+    const sx=a.r,sy=a.m,ex=b.l,ey=b.m;
+    const crit=CPM[pid]&&CPM[pid].critical&&CPM[t.id]&&CPM[t.id].critical;
+    const d=`M${sx},${sy} L${sx+9},${sy} L${sx+9},${ey} L${ex-3},${ey}`;
+    paths+=`<path d="${d}" fill="none" stroke="${crit?'#ff7a59':'#6b7290'}" stroke-width="1.6" marker-end="url(#ah)"/>`;
+  });});
+  const svg=`<svg class="gantt-arrows" width="${wrap.scrollWidth}" height="${wrap.scrollHeight}" style="position:absolute;top:0;left:0;pointer-events:none;overflow:visible"><defs><marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#9aa0bd"/></marker></defs>${paths}</svg>`;
+  wrap.insertAdjacentHTML('beforeend',svg);
 }
 
 /* ---------- BOARD ---------- */
@@ -434,6 +504,7 @@ function openModal(t){
   document.getElementById('f-finish').value=t?t.finish:'2026-07-13';
   document.getElementById('f-status').value=t?t.status:'track';
   document.getElementById('f-prog').value=t?t.prog:0;
+  document.getElementById('f-preds').value=t?predsToRowNums(t):'';
   modal.classList.add('open');
 }
 document.getElementById('addBtn').onclick=()=>openModal(null);
@@ -444,7 +515,11 @@ document.getElementById('saveBtn').onclick=()=>{
   const data={name,owner:document.getElementById('f-owner').value.trim().toUpperCase()||'?',
     start:document.getElementById('f-start').value,finish:document.getElementById('f-finish').value,
     status:document.getElementById('f-status').value,prog:Math.min(100,Math.max(0,+document.getElementById('f-prog').value||0))};
-  if(editId){Object.assign(byId(editId),data);}else{state.tasks.push({id:nextId(),...data});}
+  const predStr=document.getElementById('f-preds').value;
+  let target;
+  if(editId){target=byId(editId);Object.assign(target,data);}
+  else{target={id:nextId(),...data,preds:[]};state.tasks.push(target);}
+  if(!setPreds(target,parsePreds(predStr,target.id)))alert('Predecessors would create a circular dependency — saved without them.');
   modal.classList.remove('open');save();renderAll();
 };
 
@@ -569,7 +644,9 @@ document.getElementById('tabs').addEventListener('click',e=>{
   const isSow=t.dataset.v==='sow';
   document.querySelector('.toolbar').style.display=isSow?'none':'flex';
   document.querySelector('.ctabar').style.display=isSow?'none':'flex';
+  if(t.dataset.v==='gantt')renderGantt();   // redraw so dependency arrows measure while visible
 });
+window.addEventListener('resize',()=>{if(document.getElementById('gantt').classList.contains('active'))renderGantt();});
 
 /* ---------- SOW → AI → review → push ---------- */
 let _cands=[];
@@ -674,7 +751,8 @@ document.getElementById('projFile').onchange=e=>{
     const d=JSON.parse(rd.result);
     const tasks=Array.isArray(d.tasks)?d.tasks:(Array.isArray(d)?d:null);
     if(!tasks)throw new Error('no tasks found in file');
-    let i=1;const clean=tasks.filter(t=>t&&t.name).map(t=>({id:i++,name:String(t.name),owner:(t.owner||'?'),start:t.start||'',finish:t.finish||'',status:t.status||'track',prog:Math.min(100,Math.max(0,+t.prog||0)),milestone:!!t.milestone}));
+    const valid=tasks.filter(t=>t&&t.name);const idmap={};valid.forEach((t,i)=>idmap[t.id]=i+1);
+    const clean=valid.map((t,i)=>({id:i+1,name:String(t.name),owner:(t.owner||'?'),start:t.start||'',finish:t.finish||'',status:t.status||'track',prog:Math.min(100,Math.max(0,+t.prog||0)),milestone:!!t.milestone,preds:Array.isArray(t.preds)?t.preds.map(p=>idmap[p]).filter(Boolean):[]}));
     clean.forEach(t=>ensureColor(t.owner));
     const p=newProject(d.name||f.name.replace(/\.[^.]+$/,''),clean);
     DB.projects.push(p);state=p;save();renderProjects();renderAll();
@@ -765,7 +843,7 @@ function slideDash(pptx){
   });
 }
 
-function renderAll(){renderGrid();renderGantt();renderBoard();renderDash();}
+function renderAll(){reschedule();renderGrid();renderGantt();renderBoard();renderDash();}
 renderProjects();renderAll();
 </script>
 </body>
