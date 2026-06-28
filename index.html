@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Keystone — Project Management</title>
+<meta name="description" content="Keystone — as easy as a spreadsheet, as deep as MS Project, as collaborative as a modern SaaS app.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%235b8cff'/%3E%3Ctext x='50' y='70' font-size='62' text-anchor='middle' fill='white'%3E%E2%97%86%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0f1220;--panel:#171a2b;--panel2:#1e2236;--line:#2a2f4a;
+    --txt:#e7e9f3;--muted:#9aa0bd;--accent:#5b8cff;--accent2:#7c5cff;
+    --green:#37c98a;--amber:#f5b945;--red:#ff6b6b;--chip:#222843;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  button{font-family:inherit}
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;background:linear-gradient(90deg,#161a2e,#1a1f38);border-bottom:1px solid var(--line)}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
+  .logo .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-size:15px}
+  .proj{color:var(--muted);font-weight:500;font-size:13px;border-left:1px solid var(--line);padding-left:14px}
+  .spacer{flex:1}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:7px 13px;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#4a7bf0}
+  .btn.danger:hover{border-color:var(--red);color:var(--red)}
+  .avatars{display:flex}
+  .avatars span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:600;margin-left:-7px;border:2px solid var(--panel);color:#fff}
+  .views{display:flex;gap:4px;padding:8px 18px;background:var(--panel);border-bottom:1px solid var(--line);align-items:center}
+  .tab{padding:7px 15px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:600;user-select:none}
+  .tab:hover{background:var(--panel2);color:var(--txt)}
+  .tab.active{background:var(--accent);color:#fff}
+  main{padding:18px;max-width:1280px;margin:0 auto}
+  .view{display:none}.view.active{display:block}
+  h2{margin:0 0 4px;font-size:17px}
+  .sub{color:var(--muted);margin:0 0 16px;font-size:13px}
+  .toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+
+  table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:10px;overflow:hidden}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);font-size:13px}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr:hover td{background:#1b2036}
+  td[contenteditable]:focus{outline:2px solid var(--accent);border-radius:4px;background:#0e1228}
+  .summary td{font-weight:600;background:#1a1f36}
+  .pill{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;display:inline-block;cursor:pointer;border:none}
+  .s-track{background:rgba(55,201,138,.15);color:var(--green)}
+  .s-risk{background:rgba(245,185,69,.15);color:var(--amber)}
+  .s-late{background:rgba(255,107,107,.15);color:var(--red)}
+  .s-done{background:rgba(91,140,255,.15);color:var(--accent)}
+  .bar{height:8px;border-radius:6px;background:var(--line);overflow:hidden;min-width:70px}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .who{width:24px;height:24px;border-radius:50%;display:inline-grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+  .rowdel{opacity:0;color:var(--muted);cursor:pointer;font-weight:700;border:none;background:none;font-size:15px}
+  tr:hover .rowdel{opacity:1}
+  .rowdel:hover{color:var(--red)}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px}
+
+  .gantt{background:var(--panel);border-radius:10px;overflow-x:auto}
+  .gantt-row{display:grid;grid-template-columns:230px 1fr;border-bottom:1px solid var(--line)}
+  .g-name{padding:10px 12px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-right:1px solid var(--line)}
+  .g-track{position:relative;height:38px}
+  .weeks{display:flex}
+  .weeks span{flex:1;min-width:54px;padding:8px 6px;font-size:11px;color:var(--muted);border-right:1px solid var(--line);text-align:center}
+  .gbar{position:absolute;top:9px;height:20px;border-radius:6px;background:linear-gradient(90deg,var(--accent),var(--accent2));display:flex;align-items:center;padding:0 8px;font-size:11px;color:#fff;font-weight:600;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+  .gbar.crit{background:linear-gradient(90deg,#ff7a59,#ff5b8a)}
+  .gbar.done{opacity:.55}
+  .gmile{position:absolute;top:10px;width:18px;height:18px;background:var(--amber);transform:rotate(45deg);border-radius:3px}
+  .legend{display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--muted)}
+  .legend i{display:inline-block;width:22px;height:10px;border-radius:3px;vertical-align:middle;margin-right:5px}
+
+  .board{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .col{background:var(--panel);border-radius:10px;padding:12px;min-height:300px}
+  .col h3{margin:0 0 12px;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+  .col h3 b{color:var(--muted);background:var(--chip);padding:1px 8px;border-radius:10px;font-size:11px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px;cursor:grab}
+  .card.drag{opacity:.4}
+  .col.over{outline:2px dashed var(--accent);outline-offset:-4px}
+  .card .t{font-weight:600;margin-bottom:8px;font-size:13px}
+  .card .m{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:11px}
+
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+  .grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+  .kpi{background:var(--panel);border-radius:10px;padding:16px}
+  .kpi .v{font-size:26px;font-weight:700;margin:4px 0}
+  .kpi .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  .panel{background:var(--panel);border-radius:10px;padding:16px}
+  .panel h3{margin:0 0 14px;font-size:14px}
+  .barsrow{display:flex;align-items:flex-end;gap:14px;height:160px;padding-top:10px}
+  .barsrow .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+  .barsrow .b small{color:var(--muted);font-size:11px}
+  .donut{display:flex;align-items:center;gap:18px}
+  .leglist div{display:flex;align-items:center;gap:8px;margin-bottom:9px;font-size:13px}
+  .leglist i{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(5,7,15,.7);display:none;place-items:center;z-index:50}
+  .modal-bg.open{display:grid}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:420px;max-width:92vw}
+  .modal h3{margin:0 0 16px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600}
+  .field input,.field select{width:100%;padding:9px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--txt);font-size:13px}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  .save-flash{position:fixed;bottom:18px;right:18px;background:var(--green);color:#04150d;padding:9px 16px;border-radius:8px;font-weight:700;font-size:13px;opacity:0;transform:translateY(10px);transition:.25s;pointer-events:none}
+  .save-flash.show{opacity:1;transform:translateY(0)}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:22px}
+  .ctabar{display:flex;gap:10px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--muted)}
+  .ctabar b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><span class="mark">◆</span> Keystone</div>
+  <div class="proj" id="projName">Drone Inventory Rollout</div>
+  <div class="spacer"></div>
+  <div class="avatars">
+    <span style="background:#5b8cff">JH</span><span style="background:#7c5cff">AM</span>
+    <span style="background:#37c98a">RK</span><span style="background:#f5b945">+4</span>
+  </div>
+</header>
+
+<div class="views" id="tabs">
+  <div class="tab active" data-v="grid">▦ Grid</div>
+  <div class="tab" data-v="gantt">▭ Gantt</div>
+  <div class="tab" data-v="board">▤ Board</div>
+  <div class="tab" data-v="dash">◷ Dashboard</div>
+</div>
+
+<main>
+  <div class="ctabar">💾 <b>Live app.</b>&nbsp;Add, edit and delete tasks — everything saves to your browser and stays in sync across all four views.</div>
+  <div class="toolbar">
+    <button class="btn primary" id="addBtn">+ New task</button>
+    <button class="btn" id="exportBtn">⭳ Export CSV</button>
+    <button class="btn danger" id="resetBtn">↺ Reset demo data</button>
+  </div>
+
+  <section class="view active" id="grid">
+    <table id="gridtbl">
+      <thead><tr>
+        <th style="width:32%">Task</th><th>Owner</th><th>Start</th><th>Finish</th><th>Status</th><th style="width:13%">Progress</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint">Click a Task, Start, Finish or Progress cell to edit. Click a status pill to cycle it. Hover a row to delete.</p>
+  </section>
+
+  <section class="view" id="gantt">
+    <div class="gantt" id="ganttwrap"></div>
+    <div class="legend">
+      <span><i style="background:linear-gradient(90deg,#5b8cff,#7c5cff)"></i>Task</span>
+      <span><i style="background:linear-gradient(90deg,#ff7a59,#ff5b8a)"></i>Critical / late</span>
+      <span><i style="background:#f5b945;border-radius:2px"></i>Milestone</span>
+    </div>
+  </section>
+
+  <section class="view" id="board"><div class="board" id="boardwrap"></div></section>
+
+  <section class="view" id="dash">
+    <div class="grid4" id="kpis"></div>
+    <div class="grid2">
+      <div class="panel"><h3>Progress by task</h3><div class="barsrow" id="bars"></div></div>
+      <div class="panel"><h3>Work by status</h3><div class="donut"><svg width="150" height="150" viewBox="0 0 42 42" id="donut"></svg><div class="leglist" id="donutleg"></div></div></div>
+    </div>
+  </section>
+</main>
+
+<footer>Keystone · Phase 1 MVP · data saved locally in your browser</footer>
+
+<!-- Add/Edit modal -->
+<div class="modal-bg" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle">New task</h3>
+    <div class="field"><label>Task name</label><input id="f-name" placeholder="e.g. Install charging docks"></div>
+    <div class="field"><label>Owner (initials)</label><input id="f-owner" maxlength="3" placeholder="JH"></div>
+    <div class="field"><label>Start date</label><input id="f-start" type="date"></div>
+    <div class="field"><label>Finish date</label><input id="f-finish" type="date"></div>
+    <div class="field"><label>Status</label>
+      <select id="f-status"><option value="track">On track</option><option value="risk">At risk</option><option value="late">Late</option><option value="done">Done</option></select>
+    </div>
+    <div class="field"><label>Progress %</label><input id="f-prog" type="number" min="0" max="100" value="0"></div>
+    <div class="modal-actions">
+      <button class="btn" id="cancelBtn">Cancel</button>
+      <button class="btn primary" id="saveBtn">Save task</button>
+    </div>
+  </div>
+</div>
+<div class="save-flash" id="flash">Saved ✓</div>
+
+<script>
+const KEY='keystone.v1';
+const COLORS={JH:'#5b8cff',AM:'#7c5cff',RK:'#37c98a',TS:'#f5b945',ML:'#ff6b6b'};
+const STATUS={track:['On track','s-track'],risk:['At risk','s-risk'],late:['Late','s-late'],done:['Done','s-done']};
+const STATUS_CYCLE=['track','risk','late','done'];
+
+const SEED=[
+  {id:1,name:'Vendor selection',owner:'JH',start:'2026-07-06',finish:'2026-07-13',status:'done',prog:100},
+  {id:2,name:'Purchase order approved',owner:'AM',start:'2026-07-14',finish:'2026-07-14',status:'done',prog:100,milestone:true},
+  {id:3,name:'Drone units delivered',owner:'RK',start:'2026-07-15',finish:'2026-07-24',status:'track',prog:80},
+  {id:4,name:'Install charging docks',owner:'RK',start:'2026-07-20',finish:'2026-08-01',status:'track',prog:60},
+  {id:5,name:'Network & sensor mesh',owner:'TS',start:'2026-07-27',finish:'2026-08-14',status:'risk',prog:30},
+  {id:6,name:'Inventory API hookup',owner:'AM',start:'2026-08-10',finish:'2026-08-24',status:'track',prog:25},
+  {id:7,name:'Spend forecast model',owner:'JH',start:'2026-08-17',finish:'2026-08-28',status:'track',prog:10},
+  {id:8,name:'Field staff training',owner:'ML',start:'2026-08-24',finish:'2026-09-02',status:'track',prog:0},
+  {id:9,name:'Go-live readiness review',owner:'JH',start:'2026-09-04',finish:'2026-09-04',status:'late',prog:0,milestone:true},
+];
+
+let state=load();
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.tasks&&s.tasks.length)return s;}catch(e){}return{tasks:structuredClone(SEED)};}
+function save(){localStorage.setItem(KEY,JSON.stringify(state));flash();}
+function flash(){const f=document.getElementById('flash');f.classList.add('show');clearTimeout(window._ft);window._ft=setTimeout(()=>f.classList.remove('show'),1100);}
+function nextId(){return state.tasks.reduce((m,t)=>Math.max(m,t.id),0)+1;}
+const fmt=d=>{if(!d)return'';const x=new Date(d+'T00:00:00');return x.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
+
+/* ---------- GRID ---------- */
+function renderGrid(){
+  const tb=document.querySelector('#gridtbl tbody');tb.innerHTML='';
+  state.tasks.forEach(t=>{
+    const [lbl,cls]=STATUS[t.status]||STATUS.track;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td contenteditable data-f="name" data-id="${t.id}">${t.milestone?'◆ ':''}${esc(t.name)}</td>
+      <td><span class="who" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></td>
+      <td contenteditable data-f="start" data-id="${t.id}">${fmt(t.start)}</td>
+      <td contenteditable data-f="finish" data-id="${t.id}">${fmt(t.finish)}</td>
+      <td><button class="pill ${cls}" data-status="${t.id}">${lbl}</button></td>
+      <td><div class="bar" title="${t.prog}%"><i style="width:${t.prog}%"></i></div></td>
+      <td><button class="rowdel" data-del="${t.id}" title="Delete">×</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+function esc(s){return String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));}
+
+document.querySelector('#gridtbl').addEventListener('click',e=>{
+  const del=e.target.closest('[data-del]');
+  if(del){const id=+del.dataset.del;state.tasks=state.tasks.filter(t=>t.id!==id);save();renderAll();return;}
+  const pill=e.target.closest('[data-status]');
+  if(pill){const t=byId(+pill.dataset.status);const i=STATUS_CYCLE.indexOf(t.status);t.status=STATUS_CYCLE[(i+1)%4];if(t.status==='done')t.prog=100;save();renderAll();}
+});
+document.querySelector('#gridtbl').addEventListener('blur',e=>{
+  const cell=e.target.closest('[contenteditable]');if(!cell)return;
+  const t=byId(+cell.dataset.id),f=cell.dataset.f,v=cell.textContent.trim();
+  if(f==='name')t.name=v.replace(/^◆\s*/,'');
+  else if(f==='start'||f==='finish'){const d=parseDate(v);if(d)t[f]=d;}
+  save();renderGantt();renderDash();
+},true);
+function parseDate(s){const d=new Date(s+' 2026');if(!isNaN(d))return d.toISOString().slice(0,10);const d2=new Date(s);return isNaN(d2)?null:d2.toISOString().slice(0,10);}
+const byId=id=>state.tasks.find(t=>t.id===id);
+
+/* ---------- GANTT ---------- */
+function renderGantt(){
+  const wrap=document.getElementById('ganttwrap');
+  const dates=state.tasks.flatMap(t=>[t.start,t.finish]).filter(Boolean).map(d=>new Date(d));
+  if(!dates.length){wrap.innerHTML='<p style="padding:16px;color:var(--muted)">No dated tasks.</p>';return;}
+  let min=new Date(Math.min(...dates)),max=new Date(Math.max(...dates));
+  min.setDate(min.getDate()-min.getDay());           // snap to week start
+  const totalDays=Math.max(7,(max-min)/864e5+7);
+  const weeks=Math.ceil(totalDays/7);
+  let head='<div class="gantt-row"><div class="g-name" style="color:var(--muted);font-weight:600">Task</div><div class="weeks">';
+  for(let i=0;i<weeks;i++){const d=new Date(min);d.setDate(d.getDate()+i*7);head+=`<span>${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`;}
+  head+='</div></div>';
+  let rows='';
+  state.tasks.forEach(t=>{
+    const s=new Date(t.start),f=new Date(t.finish);
+    const left=((s-min)/864e5)/totalDays*100;
+    const width=Math.max(1.5,((f-s)/864e5+1)/totalDays*100);
+    const crit=t.status==='late'||t.status==='risk';
+    let bar;
+    if(t.milestone)bar=`<div class="gmile" style="left:${Math.max(0,left)}%"></div>`;
+    else bar=`<div class="gbar ${crit?'crit':''} ${t.status==='done'?'done':''}" style="left:${left}%;width:${width}%">${esc(t.name).slice(0,20)}</div>`;
+    rows+=`<div class="gantt-row"><div class="g-name">${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="g-track">${bar}</div></div>`;
+  });
+  wrap.innerHTML=head+rows;
+}
+
+/* ---------- BOARD ---------- */
+const BOARD_COLS=[['Backlog','track',0],['In progress','track',1],['Review','risk'],['Done','done']];
+function boardKey(t){
+  if(t.status==='done')return 'Done';
+  if(t.status==='risk'||t.status==='late')return 'Review';
+  if(t.prog>0)return 'In progress';
+  return 'Backlog';
+}
+function renderBoard(){
+  const wrap=document.getElementById('boardwrap');wrap.innerHTML='';
+  const cols=['Backlog','In progress','Review','Done'];
+  cols.forEach(name=>{
+    const items=state.tasks.filter(t=>boardKey(t)===name);
+    const col=document.createElement('div');col.className='col';col.dataset.col=name;
+    col.innerHTML=`<h3>${name} <b>${items.length}</b></h3>`;
+    items.forEach(t=>col.appendChild(card(t)));
+    wrap.appendChild(col);
+  });
+  document.querySelectorAll('.col').forEach(col=>{
+    col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('over');});
+    col.addEventListener('dragleave',()=>col.classList.remove('over'));
+    col.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('over');
+      const t=byId(window._drag);if(t==null)return;applyColumn(t,col.dataset.col);save();renderAll();});
+  });
+}
+function card(t){
+  const el=document.createElement('div');el.className='card';el.draggable=true;
+  el.innerHTML=`<div class="t">${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="m"><span>${t.prog}%</span><span class="who" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></div>`;
+  el.addEventListener('dragstart',()=>{el.classList.add('drag');window._drag=t.id;});
+  el.addEventListener('dragend',()=>el.classList.remove('drag'));
+  return el;
+}
+function applyColumn(t,col){
+  if(col==='Done'){t.status='done';t.prog=100;}
+  else if(col==='Review'){if(t.status==='done'){t.status='risk';}else t.status='risk';if(t.prog===0)t.prog=50;if(t.prog===100)t.prog=90;}
+  else if(col==='In progress'){t.status='track';if(t.prog===0)t.prog=20;if(t.prog===100)t.prog=80;}
+  else{t.status='track';t.prog=0;}
+}
+
+/* ---------- DASHBOARD ---------- */
+function renderDash(){
+  const ts=state.tasks,n=ts.length||1;
+  const done=ts.filter(t=>t.status==='done').length;
+  const atRisk=ts.filter(t=>t.status==='risk'||t.status==='late').length;
+  const avg=Math.round(ts.reduce((s,t)=>s+(+t.prog||0),0)/n);
+  document.getElementById('kpis').innerHTML=`
+    <div class="kpi"><div class="l">Avg progress</div><div class="v">${avg}%</div><div class="l">across ${ts.length} tasks</div></div>
+    <div class="kpi"><div class="l">Completed</div><div class="v">${done}/${ts.length}</div><div class="l">${Math.round(done/n*100)}% of plan</div></div>
+    <div class="kpi"><div class="l">At risk / late</div><div class="v">${atRisk}</div><div class="l">need attention</div></div>
+    <div class="kpi"><div class="l">Milestones</div><div class="v">${ts.filter(t=>t.milestone).length}</div><div class="l">key checkpoints</div></div>`;
+  // bars
+  const bars=document.getElementById('bars');bars.innerHTML='';
+  ts.slice(0,9).forEach(t=>{
+    const c=t.status==='done'?'#5b8cff':t.status==='risk'?'#f5b945':t.status==='late'?'#ff6b6b':'#37c98a';
+    const b=document.createElement('div');b.className='b';
+    b.innerHTML=`<div style="width:60%;height:${Math.max(3,t.prog)}%;background:${c};border-radius:5px 5px 0 0"></div><small title="${esc(t.name)}">${esc(t.owner||'')}</small>`;
+    bars.appendChild(b);
+  });
+  // donut
+  const seg=[['On track','track','#37c98a'],['At risk','risk','#f5b945'],['Late','late','#ff6b6b'],['Done','done','#5b8cff']]
+    .map(([n,k,c])=>[n,ts.filter(t=>t.status===k).length,c]).filter(s=>s[1]>0);
+  const total=seg.reduce((s,x)=>s+x[1],0)||1;
+  const svg=document.getElementById('donut');svg.innerHTML='';let off=25;
+  seg.forEach(([n,v,c])=>{
+    const pct=v/total*100;
+    const ci=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    ci.setAttribute('cx',21);ci.setAttribute('cy',21);ci.setAttribute('r',15.9155);
+    ci.setAttribute('fill','transparent');ci.setAttribute('stroke',c);ci.setAttribute('stroke-width',6);
+    ci.setAttribute('stroke-dasharray',`${pct} ${100-pct}`);ci.setAttribute('stroke-dashoffset',off);
+    svg.appendChild(ci);off=(off-pct+100)%100;
+  });
+  document.getElementById('donutleg').innerHTML=seg.map(([n,v,c])=>`<div><i style="background:${c}"></i>${n} · ${v}</div>`).join('')||'<div style="color:var(--muted)">No tasks</div>';
+}
+
+/* ---------- MODAL ---------- */
+const modal=document.getElementById('modal');
+let editId=null;
+function openModal(t){
+  editId=t?t.id:null;
+  document.getElementById('modalTitle').textContent=t?'Edit task':'New task';
+  document.getElementById('f-name').value=t?t.name:'';
+  document.getElementById('f-owner').value=t?t.owner||'':'';
+  document.getElementById('f-start').value=t?t.start:'2026-07-06';
+  document.getElementById('f-finish').value=t?t.finish:'2026-07-13';
+  document.getElementById('f-status').value=t?t.status:'track';
+  document.getElementById('f-prog').value=t?t.prog:0;
+  modal.classList.add('open');
+}
+document.getElementById('addBtn').onclick=()=>openModal(null);
+document.getElementById('cancelBtn').onclick=()=>modal.classList.remove('open');
+modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open');});
+document.getElementById('saveBtn').onclick=()=>{
+  const name=document.getElementById('f-name').value.trim();if(!name){alert('Task name required');return;}
+  const data={name,owner:document.getElementById('f-owner').value.trim().toUpperCase()||'?',
+    start:document.getElementById('f-start').value,finish:document.getElementById('f-finish').value,
+    status:document.getElementById('f-status').value,prog:Math.min(100,Math.max(0,+document.getElementById('f-prog').value||0))};
+  if(editId){Object.assign(byId(editId),data);}else{state.tasks.push({id:nextId(),...data});}
+  modal.classList.remove('open');save();renderAll();
+};
+
+/* ---------- TOOLBAR ---------- */
+document.getElementById('exportBtn').onclick=()=>{
+  const rows=[['Task','Owner','Start','Finish','Status','Progress']].concat(
+    state.tasks.map(t=>[t.name,t.owner,t.start,t.finish,STATUS[t.status][0],t.prog+'%']));
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='keystone-tasks.csv';a.click();
+};
+document.getElementById('resetBtn').onclick=()=>{if(confirm('Reset to demo data? Your changes will be lost.')){state={tasks:structuredClone(SEED)};save();renderAll();}};
+
+/* ---------- TABS + INIT ---------- */
+document.getElementById('tabs').addEventListener('click',e=>{
+  const t=e.target.closest('.tab');if(!t)return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');document.getElementById(t.dataset.v).classList.add('active');
+});
+function renderAll(){renderGrid();renderGantt();renderBoard();renderDash();}
+renderAll();
+</script>
+</body>
+</html>
