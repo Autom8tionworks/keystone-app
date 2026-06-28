@@ -656,10 +656,7 @@ document.getElementById('importReplace').onclick=()=>doImport('replace');
 document.getElementById('importFile').onchange=e=>{
   const file=e.target.files[0];if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
-  if(ext==='mpp'){
-    alert('Microsoft Project .mpp files use a proprietary binary format that can’t be read directly in the browser.\n\nTo import: in Microsoft Project choose File → Save As, pick "XML Format (*.xml)", then import that .xml file here.');
-    e.target.value='';return;
-  }
+  if(ext==='mpp'){convertMpp(file);e.target.value='';return;}
   const reader=new FileReader();
   if(ext==='xml'){
     reader.onload=()=>{try{showImportConfirm(parseMSP(reader.result),'Microsoft Project XML');}catch(err){alert('Could not read that XML file: '+err.message);}};
@@ -670,6 +667,29 @@ document.getElementById('importFile').onchange=e=>{
   }
   e.target.value='';
 };
+// .mpp → MSPDI XML via the external MPXJ converter service, then import
+const CONV_KEY='keystone.converterUrl';
+async function convertMpp(file){
+  let url=localStorage.getItem(CONV_KEY)||'';
+  if(!url){
+    url=prompt('To import .mpp files, Keystone needs your MPP→XML converter service URL (deployed separately — see the mpp-converter README).\n\nPaste it here:','https://');
+    if(url===null)return;
+    url=url.trim().replace(/\/+$/,'');
+    if(!/^https?:\/\//.test(url)){alert('That doesn’t look like a URL. Import cancelled.');return;}
+    localStorage.setItem(CONV_KEY,url);
+  }
+  const btn=document.getElementById('importBtn'),orig=btn.textContent;
+  btn.textContent='⏳ Converting…';btn.disabled=true;
+  try{
+    const r=await fetch(url+'/convert',{method:'POST',body:file});
+    if(!r.ok){const t=await r.text().catch(()=>'');throw new Error('HTTP '+r.status+(t?': '+t.slice(0,200):''));}
+    const xml=await r.text();
+    showImportConfirm(parseMSP(xml),'Microsoft Project (.mpp)');
+  }catch(err){
+    localStorage.removeItem(CONV_KEY); // wrong/unreachable URL → ask again next time
+    alert('Could not convert .mpp.\n\n'+err.message+'\n\nIf the converter service is asleep (free tier), wait ~30s and try again. You’ll be asked for the URL again on the next attempt.');
+  }finally{btn.textContent=orig;btn.disabled=false;}
+}
 
 /* ---------- TABS + INIT ---------- */
 document.getElementById('tabs').addEventListener('click',e=>{
