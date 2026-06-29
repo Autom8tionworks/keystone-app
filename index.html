@@ -127,6 +127,11 @@
   .predcell:focus{color:var(--txt)}
   .ownercell{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:13px;font-size:11px;font-weight:700;color:#fff;cursor:text}
   .ownercell:focus{outline:2px solid var(--accent)}
+  .ownerwrap{display:flex;align-items:center;gap:8px;min-width:0}
+  .ownerwrap .who{flex:0 0 auto}
+  .ownername{font-size:13px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:text;outline:none;min-width:30px;max-width:170px}
+  .ownername:empty::before{content:'—';color:var(--muted)}
+  .ownername:focus{color:var(--txt);max-width:none}
   .statussel{appearance:none;-webkit-appearance:none;border:none;border-radius:20px;padding:3px 11px;font-size:11px;font-weight:700;cursor:pointer}
   .statussel:focus{outline:2px solid var(--accent)}
   .statussel option{background:var(--panel2);color:var(--txt)}
@@ -301,7 +306,7 @@
   <div class="modal">
     <h3 id="modalTitle">New task</h3>
     <div class="field"><label>Task name</label><input id="f-name" placeholder="e.g. Install charging docks"></div>
-    <div class="field"><label>Owner (initials)</label><input id="f-owner" maxlength="3" placeholder="JH"></div>
+    <div class="field"><label>Owner</label><input id="f-owner" placeholder="e.g. Rick Kumar"></div>
     <div class="field"><label>Start date</label><input id="f-start" type="date"></div>
     <div class="field"><label>Finish date</label><input id="f-finish" type="date"></div>
     <div class="field"><label>Predecessors (row #s, e.g. 2, 4)</label><input id="f-preds" placeholder="leave blank if none"></div>
@@ -468,7 +473,7 @@ function renderGrid(){
       <td class="rownum" draggable="true" data-edit="${t.id}" data-drag="${t.id}" title="Drag to reorder · click to edit"${critCls}><span class="dh">⠿</span>${idx+1}${t.notes?'<sup style="font-size:8px;margin-left:1px">📝</sup>':''}</td>
       <td class="pricell"><span class="pridot p-${pri}" data-pri="${t.id}" title="Priority: ${pri} — click to change"></span></td>
       <td contenteditable data-f="name" data-id="${t.id}" style="padding-left:${12+lvl*18}px;${sum?'font-weight:700':''}">${sum?'▾ ':''}${t.milestone?'◆ ':''}${esc(t.name)}</td>
-      <td><span contenteditable data-f="owner" data-id="${t.id}" class="ownercell" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></td>
+      <td><div class="ownerwrap"><span class="who" style="background:${COLORS[t.owner]||'#555'}" title="${esc(t.owner==='?'?'':t.owner)}">${esc(initials(t.owner))}</span><span contenteditable data-f="owner" data-id="${t.id}" class="ownername">${esc(t.owner==='?'?'':t.owner)}</span></div></td>
       ${dateCell('start')}
       ${dateCell('finish')}
       <td contenteditable data-f="preds" data-id="${t.id}" class="predcell">${predsToRowNums(t)}</td>
@@ -542,7 +547,7 @@ document.querySelector('#gridtbl').addEventListener('blur',e=>{
   const cell=e.target.closest('[contenteditable]');if(!cell)return;
   const t=byId(+cell.dataset.id),f=cell.dataset.f,v=cell.textContent.trim();
   if(f==='name')t.name=v.replace(/^[▾▸◆\s]+/,'')||'Untitled';
-  else if(f==='owner'){t.owner=v.toUpperCase().slice(0,3)||'?';ensureColor(t.owner);}
+  else if(f==='owner'){t.owner=v.trim()||'?';ensureColor(t.owner);}
   else if(f==='start'||f==='finish'){const d=parseDate(v);if(d)t[f]=d;else if(v==='')t[f]='';}
   else if(f==='preds'){if(!setPreds(t,parsePreds(v,t.id))){alert('That would create a circular dependency — not applied.');}}
   save();renderAll();
@@ -655,7 +660,7 @@ function renderBoard(){
 }
 function card(t){
   const el=document.createElement('div');el.className='card';el.draggable=true;
-  el.innerHTML=`<div class="t">${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="m"><span>${t.prog}%</span><span class="who" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></div>`;
+  el.innerHTML=`<div class="t">${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="m"><span>${t.prog}%</span><span class="who" style="background:${COLORS[t.owner]||'#555'}" title="${esc(t.owner==='?'?'':t.owner)}">${esc(initials(t.owner))}</span></div>`;
   el.addEventListener('dragstart',()=>{el.classList.add('drag');window._drag=t.id;});
   el.addEventListener('dragend',()=>el.classList.remove('drag'));
   return el;
@@ -683,7 +688,7 @@ function renderDash(){
   ts.slice(0,9).forEach(t=>{
     const c=t.status==='done'?'#5b8cff':t.status==='risk'?'#f5b945':t.status==='late'?'#ff6b6b':'#37c98a';
     const b=document.createElement('div');b.className='b';
-    b.innerHTML=`<div style="width:60%;height:${Math.max(3,t.prog)}%;background:${c};border-radius:5px 5px 0 0"></div><small title="${esc(t.name)}">${esc(t.owner||'')}</small>`;
+    b.innerHTML=`<div style="width:60%;height:${Math.max(3,t.prog)}%;background:${c};border-radius:5px 5px 0 0"></div><small title="${esc(t.name)+(t.owner&&t.owner!=='?'?' — '+esc(t.owner):'')}">${esc(initials(t.owner))}</small>`;
     bars.appendChild(b);
   });
   // donut
@@ -725,7 +730,7 @@ document.getElementById('cancelBtn').onclick=()=>modal.classList.remove('open');
 modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open');});
 document.getElementById('saveBtn').onclick=()=>{
   const name=document.getElementById('f-name').value.trim();if(!name){alert('Task name required');return;}
-  const data={name,owner:document.getElementById('f-owner').value.trim().toUpperCase()||'?',
+  const data={name,owner:document.getElementById('f-owner').value.trim()||'?',
     start:document.getElementById('f-start').value,finish:document.getElementById('f-finish').value,
     status:document.getElementById('f-status').value,prog:Math.min(100,Math.max(0,+document.getElementById('f-prog').value||0)),
     priority:document.getElementById('f-priority').value,notes:document.getElementById('f-notes').value.trim(),
@@ -782,7 +787,7 @@ function parseExcel(buf){
     const raw=String(r[kName]||'');const name=raw.replace(/^◆\s*/,'').trim();
     if(!name)return null;
     let prog=0;if(kProg){let p=parseFloat(String(r[kProg]).replace('%',''));if(!isNaN(p))prog=(p>0&&p<=1)?Math.round(p*100):Math.round(p);}
-    return{name,owner:kOwner?initials(r[kOwner]):'?',start:toISO(r[kStart]),finish:toISO(r[kFinish]),
+    return{name,owner:kOwner?(String(r[kOwner]).trim()||'?'):'?',start:toISO(r[kStart]),finish:toISO(r[kFinish]),
       status:mapStatus(kStatus?r[kStatus]:'',prog),prog:Math.min(100,Math.max(0,prog)),milestone:/^◆/.test(raw)};
   }).filter(Boolean);
 }
@@ -806,7 +811,7 @@ function parseMSP(xmlText){
     const name=T(tk.querySelector('Name')).trim();
     if(!name||uid==='0')return;
     const prog=parseInt(T(tk.querySelector('PercentComplete'))||'0',10)||0;
-    out.push({name,owner:assign[uid]?initials(assign[uid]):'?',start:toISO(T(tk.querySelector('Start'))),
+    out.push({name,owner:assign[uid]?assign[uid]:'?',start:toISO(T(tk.querySelector('Start'))),
       finish:toISO(T(tk.querySelector('Finish'))),status:prog>=100?'done':'track',prog,
       milestone:T(tk.querySelector('Milestone'))==='1'});
   });
