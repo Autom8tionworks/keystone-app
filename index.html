@@ -8,6 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%235b8cff'/%3E%3Ctext x='50' y='70' font-size='62' text-anchor='middle' fill='white'%3E%E2%97%86%3C/text%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
   :root{
     --bg:#0f1220;--panel:#171a2b;--panel2:#1e2236;--line:#2a2f4a;
@@ -202,6 +203,7 @@
     <input type="file" id="projFile" accept=".json,application/json" style="display:none">
   </div>
   <div class="spacer"></div>
+  <button class="btn" id="accountBtn" style="margin-right:10px">☁ Sign in</button>
   <div class="avatars">
     <span style="background:#5b8cff">JH</span><span style="background:#7c5cff">AM</span>
     <span style="background:#37c98a">RK</span><span style="background:#f5b945">+4</span>
@@ -327,6 +329,21 @@
     </div>
   </div>
 </div>
+<!-- Auth modal -->
+<div class="modal-bg" id="authModal">
+  <div class="modal">
+    <h3>Sign in to Keystone</h3>
+    <p class="sub" style="margin-bottom:14px">Sync your projects to the cloud and access them from any device.</p>
+    <div class="field"><label>Email</label><input id="au-email" type="email" placeholder="you@example.com"></div>
+    <div class="field"><label>Password</label><input id="au-pass" type="password" placeholder="••••••••"></div>
+    <p class="hint" id="au-msg" style="min-height:16px;margin:4px 0 0"></p>
+    <div class="modal-actions">
+      <button class="btn" id="au-cancel">Cancel</button>
+      <button class="btn" id="au-signup">Create account</button>
+      <button class="btn primary" id="au-signin">Sign in</button>
+    </div>
+  </div>
+</div>
 <div class="save-flash" id="flash">Saved ✓</div>
 
 <script>
@@ -410,7 +427,7 @@ function loadDB(){
   const p=newProject('Drone Inventory Rollout',structuredClone(SEED));
   return{projects:[p],activeId:p.id};
 }
-function save(){DB.activeId=state.id;localStorage.setItem(KEY,JSON.stringify(DB));flash();}
+function save(){DB.activeId=state.id;localStorage.setItem(KEY,JSON.stringify(DB));flash();scheduleCloudSync();}
 function flash(){const f=document.getElementById('flash');f.classList.add('show');clearTimeout(window._ft);window._ft=setTimeout(()=>f.classList.remove('show'),1100);}
 function nextId(){return state.tasks.reduce((m,t)=>Math.max(m,t.id),0)+1;}
 const fmt=d=>{if(!d)return'';const x=new Date(d+'T00:00:00');return x.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
@@ -936,7 +953,7 @@ document.getElementById('projSelect').onchange=e=>switchProject(e.target.value);
 document.getElementById('newProj').onclick=()=>{const n=prompt('New project name:','Project '+(DB.projects.length+1));if(n===null)return;const p=newProject(n.trim()||'Untitled',[]);DB.projects.push(p);state=p;save();renderProjects();renderAll();};
 document.getElementById('renameProj').onclick=()=>{const n=prompt('Rename project:',state.name);if(n===null)return;state.name=n.trim()||state.name;save();renderProjects();};
 document.getElementById('dupProj').onclick=()=>{const p=newProject(state.name+' (copy)',structuredClone(state.tasks));DB.projects.push(p);state=p;save();renderProjects();renderAll();};
-document.getElementById('delProj').onclick=()=>{if(DB.projects.length<=1){alert('You need at least one project.');return;}if(!confirm('Delete project “'+state.name+'”? This cannot be undone.'))return;DB.projects=DB.projects.filter(p=>p.id!==state.id);state=DB.projects[0];save();renderProjects();renderAll();};
+document.getElementById('delProj').onclick=()=>{if(DB.projects.length<=1){alert('You need at least one project.');return;}if(!confirm('Delete project “'+state.name+'”? This cannot be undone.'))return;const cid=state._cloudId;DB.projects=DB.projects.filter(p=>p.id!==state.id);state=DB.projects[0];cloudDelete(cid);save();renderProjects();renderAll();};
 document.getElementById('expProj').onclick=()=>{
   const blob=new Blob([JSON.stringify({app:'keystone',version:1,name:state.name,tasks:state.tasks},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -1089,7 +1106,65 @@ document.getElementById('calGrid').addEventListener('click',e=>{
 });
 
 function renderAll(){reschedule();renderGrid();renderGantt();renderBoard();renderDash();renderCalendar();}
-renderProjects();renderAll();
+
+/* ---------- SUPABASE CLOUD SYNC (accounts + cross-device) ---------- */
+const SB_URL='https://rgxcdiqkjqpokgccgwqq.supabase.co';
+const SB_KEY='sb_publishable_ShFSr1QT2fzL6l3GKpcFMw_67DLTG2h';
+let sb=null, cloudUser=null, syncTimer=null;
+function flashMsg(m){const f=document.getElementById('flash');const o=f.textContent;f.textContent=m;f.classList.add('show');clearTimeout(window._ft);window._ft=setTimeout(()=>{f.classList.remove('show');f.textContent='Saved ✓';},1400);}
+function authMsg(m){document.getElementById('au-msg').textContent=m;}
+function updateAccountUI(){const b=document.getElementById('accountBtn');if(!b)return;if(cloudUser){b.textContent='✓ '+cloudUser.email;b.title='Signed in — click to sign out';}else{b.textContent='☁ Sign in';b.title='Sign in to sync to the cloud';}}
+function stripCloud(p){return{id:p.id,name:p.name,tasks:p.tasks};}
+async function cloudUpsert(p){
+  if(!sb||!cloudUser||!p)return;
+  const payload={name:p.name,data:stripCloud(p),updated_at:new Date().toISOString()};
+  try{
+    if(p._cloudId){await sb.from('projects').update(payload).eq('id',p._cloudId);}
+    else{const{data,error}=await sb.from('projects').insert(payload).select('id').single();if(!error&&data){p._cloudId=data.id;localStorage.setItem(KEY,JSON.stringify(DB));}}
+  }catch(e){console.warn('cloud upsert failed',e);}
+}
+async function cloudDelete(cloudId){if(sb&&cloudUser&&cloudId){try{await sb.from('projects').delete().eq('id',cloudId);}catch(e){}}}
+function scheduleCloudSync(){if(!cloudUser)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>cloudUpsert(state),800);}
+async function onSignedIn(){
+  updateAccountUI();
+  try{
+    const{data,error}=await sb.from('projects').select('*').order('updated_at',{ascending:true});
+    if(error)throw error;
+    if(data.length){
+      DB.projects=data.map(r=>({id:(r.data&&r.data.id)||uid(),name:r.name||(r.data&&r.data.name)||'Project',tasks:(r.data&&r.data.tasks)||[],_cloudId:r.id}));
+      state=DB.projects[0];DB.activeId=state.id;
+    }else{ for(const p of DB.projects){await cloudUpsert(p);} }
+    localStorage.setItem(KEY,JSON.stringify(DB));
+    renderProjects();renderAll();flashMsg('☁ Synced');
+  }catch(e){flashMsg('⚠ Cloud sync failed');console.warn(e);}
+}
+async function doAuth(mode){
+  if(!sb){authMsg('Cloud not available.');return;}
+  const email=document.getElementById('au-email').value.trim(),pass=document.getElementById('au-pass').value;
+  if(!email||!pass){authMsg('Enter email and password.');return;}
+  authMsg('…');
+  try{
+    const{data,error}= mode==='signup'? await sb.auth.signUp({email,password:pass}) : await sb.auth.signInWithPassword({email,password:pass});
+    if(error){authMsg('⚠ '+error.message);return;}
+    if(mode==='signup'&&!data.session){authMsg('Account created — check your email to confirm, then sign in.');return;}
+    cloudUser=data.user;document.getElementById('authModal').classList.remove('open');onSignedIn();
+  }catch(e){authMsg('⚠ '+e.message);}
+}
+function initCloud(){
+  if(typeof window.supabase==='undefined'||!window.supabase.createClient){console.warn('supabase-js not loaded');return;}
+  sb=window.supabase.createClient(SB_URL,SB_KEY);
+  document.getElementById('accountBtn').onclick=()=>{
+    if(cloudUser){if(confirm('Sign out of '+cloudUser.email+'?'))sb.auth.signOut().then(()=>{cloudUser=null;updateAccountUI();flashMsg('Signed out');});}
+    else{authMsg('');document.getElementById('authModal').classList.add('open');}
+  };
+  document.getElementById('au-cancel').onclick=()=>document.getElementById('authModal').classList.remove('open');
+  document.getElementById('au-signin').onclick=()=>doAuth('signin');
+  document.getElementById('au-signup').onclick=()=>doAuth('signup');
+  document.getElementById('authModal').addEventListener('click',e=>{if(e.target.id==='authModal')e.currentTarget.classList.remove('open');});
+  sb.auth.getSession().then(({data})=>{if(data.session){cloudUser=data.session.user;onSignedIn();}updateAccountUI();});
+}
+
+renderProjects();renderAll();initCloud();
 </script>
 </body>
 </html>
