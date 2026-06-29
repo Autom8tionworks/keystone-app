@@ -137,6 +137,10 @@
   .statussel option{background:var(--panel2);color:var(--txt)}
   .progcell{display:flex;align-items:center;gap:8px}
   .proginput{width:46px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--txt);font-size:12px;padding:3px 5px}
+  .dateinput{background:transparent;border:1px solid transparent;border-radius:6px;color:var(--txt);font-size:13px;padding:3px 5px;font-family:inherit;color-scheme:dark;cursor:pointer}
+  .dateinput:hover{border-color:var(--line);background:var(--panel2)}
+  .dateinput:focus{outline:none;border-color:var(--accent)}
+  .dateinput::-webkit-calendar-picker-indicator{filter:invert(.7);cursor:pointer}
   .proginput:focus{outline:1px solid var(--accent)}
   .addrow td{text-align:center;color:var(--accent);cursor:pointer;font-weight:600;padding:11px;background:var(--panel)}
   .addrow td:hover{background:var(--panel2)}
@@ -242,7 +246,7 @@
   <section class="view active" id="grid">
     <table id="gridtbl">
       <thead><tr>
-        <th style="width:30px">#</th><th style="width:16px" title="Priority"></th><th style="width:26%">Task</th><th>Owner</th><th>Start</th><th>Finish</th><th title="Predecessor row numbers">Preds</th><th>Status</th><th style="width:12%">Progress</th><th></th>
+        <th style="width:30px">#</th><th style="width:16px" title="Priority"></th><th style="width:26%">Task</th><th>Owner</th><th>Start</th><th>Finish</th><th title="Predecessor row numbers">Preds</th><th>Status</th><th style="width:12%">Progress</th><th style="text-align:right" title="⬅ outdent / ➡ indent to make sub-tasks · × deletes the row">Outline</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -456,6 +460,7 @@ function save(){DB.activeId=state.id;localStorage.setItem(KEY,JSON.stringify(DB)
 function flash(){const f=document.getElementById('flash');f.classList.add('show');clearTimeout(window._ft);window._ft=setTimeout(()=>f.classList.remove('show'),1100);}
 function nextId(){return state.tasks.reduce((m,t)=>Math.max(m,t.id),0)+1;}
 const fmt=d=>{if(!d)return'';const x=new Date(d+'T00:00:00');return x.toLocaleDateString('en-US',{month:'short',day:'numeric'});};
+const fmtY=d=>{if(!d)return'';const x=new Date(d+'T00:00:00');return isNaN(x)?'':x.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});};
 
 /* ---------- GRID ---------- */
 function renderGrid(){
@@ -466,7 +471,7 @@ function renderGrid(){
     const tr=document.createElement('tr');
     const pri=t.priority||'med';
     const lvl=t.level||0, sum=!!t._summary;
-    const dateCell=f=> sum ? `<td class="rocell">${fmt(t[f])}</td>` : `<td contenteditable data-f="${f}" data-id="${t.id}">${fmt(t[f])}</td>`;
+    const dateCell=f=> sum ? `<td class="rocell">${fmtY(t[f])}</td>` : `<td><input type="date" class="dateinput" data-f="${f}" data-id="${t.id}" value="${t[f]||''}"></td>`;
     const progCell= sum ? `<td><div class="progcell"><div class="bar"><i style="width:${t.prog}%"></i></div></div></td>`
       : `<td><div class="progcell"><input type="number" class="proginput" min="0" max="100" value="${t.prog}" data-id="${t.id}"><div class="bar"><i style="width:${t.prog}%"></i></div></div></td>`;
     tr.innerHTML=`
@@ -542,6 +547,8 @@ document.querySelector('#gridtbl').addEventListener('change',e=>{
   if(sel){const t=byId(+sel.dataset.id);t.status=sel.value;if(t.status==='done')t.prog=100;save();renderAll();return;}
   const pg=e.target.closest('.proginput');
   if(pg){const t=byId(+pg.dataset.id);t.prog=Math.min(100,Math.max(0,Math.round(+pg.value)||0));save();renderAll();return;}
+  const di=e.target.closest('.dateinput');
+  if(di){const t=byId(+di.dataset.id);t[di.dataset.f]=di.value||'';save();renderAll();return;}
 });
 document.querySelector('#gridtbl').addEventListener('blur',e=>{
   const cell=e.target.closest('[contenteditable]');if(!cell)return;
