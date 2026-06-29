@@ -135,6 +135,15 @@
   .pridot:hover{transform:scale(1.35)}
   .p-low{background:#6b7290}.p-med{background:#5b8cff}.p-high{background:#f5b945}
   .p-critical{background:#ff6b6b;box-shadow:0 0 0 2px rgba(255,107,107,.3)}
+  .rownum[draggable]{cursor:grab}
+  .dh{color:var(--muted);margin-right:3px;font-size:11px}
+  .rocell{color:var(--muted);font-size:13px}
+  .rowtools{white-space:nowrap;text-align:right}
+  .rtbtn{opacity:0;background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px}
+  tr:hover .rtbtn{opacity:.75}
+  .rtbtn:hover{color:var(--accent);opacity:1}
+  tr.drop-above td{box-shadow:inset 0 2px 0 var(--accent)}
+  tr.drop-below td{box-shadow:inset 0 -2px 0 var(--accent)}
   .gmile.mcrit{background:var(--crit)}
   /* CALENDAR */
   .cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
@@ -369,6 +378,22 @@ function reschedule(){
   order.forEach(id=>{const slack=LS[id]-ES[id];CPM[id]={es:ES[id],ef:EF[id],slack,critical:slack<=0};
     const t=byid[id];
     if(preds[id].length){const ns=toISO(ES[id]),nf=toISO(EF[id]);if(t.start!==ns||t.finish!==nf){t.start=ns;t.finish=nf;changed=true;}}});
+  // WBS summary rollups: a task with deeper-indented tasks below it is a summary; roll up dates + progress
+  for(let i=ts.length-1;i>=0;i--){
+    const t=ts[i],lvl=t.level||0;let starts=[],finishes=[],leafProgs=[],hasChild=false;
+    for(let j=i+1;j<ts.length&&(ts[j].level||0)>lvl;j++){
+      hasChild=true;const ch=ts[j];
+      if(ch.start)starts.push(ch.start);if(ch.finish)finishes.push(ch.finish);
+      const leaf=!(j+1<ts.length&&(ts[j+1].level||0)>(ch.level||0));
+      if(leaf)leafProgs.push(+ch.prog||0);
+    }
+    t._summary=hasChild;
+    if(hasChild){
+      if(starts.length)t.start=starts.reduce((a,b)=>a<b?a:b);
+      if(finishes.length)t.finish=finishes.reduce((a,b)=>a>b?a:b);
+      if(leafProgs.length)t.prog=Math.round(leafProgs.reduce((a,b)=>a+b,0)/leafProgs.length);
+    }
+  }
   if(changed)try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){}
   return true;
 }
@@ -404,25 +429,42 @@ function renderGrid(){
     const c=CPM[t.id];const critCls=c&&c.critical?' style="color:var(--crit);font-weight:700"':'';
     const tr=document.createElement('tr');
     const pri=t.priority||'med';
+    const lvl=t.level||0, sum=!!t._summary;
+    const dateCell=f=> sum ? `<td class="rocell">${fmt(t[f])}</td>` : `<td contenteditable data-f="${f}" data-id="${t.id}">${fmt(t[f])}</td>`;
+    const progCell= sum ? `<td><div class="progcell"><div class="bar"><i style="width:${t.prog}%"></i></div></div></td>`
+      : `<td><div class="progcell"><input type="number" class="proginput" min="0" max="100" value="${t.prog}" data-id="${t.id}"><div class="bar"><i style="width:${t.prog}%"></i></div></div></td>`;
     tr.innerHTML=`
-      <td class="rownum" data-edit="${t.id}" title="${t.notes?'📝 '+esc(t.notes).slice(0,120):'Edit task'}"${critCls}>${idx+1}${t.notes?'<sup style="font-size:8px;margin-left:1px">📝</sup>':''}</td>
+      <td class="rownum" draggable="true" data-edit="${t.id}" data-drag="${t.id}" title="Drag to reorder · click to edit"${critCls}><span class="dh">⠿</span>${idx+1}${t.notes?'<sup style="font-size:8px;margin-left:1px">📝</sup>':''}</td>
       <td class="pricell"><span class="pridot p-${pri}" data-pri="${t.id}" title="Priority: ${pri} — click to change"></span></td>
-      <td contenteditable data-f="name" data-id="${t.id}">${t.milestone?'◆ ':''}${esc(t.name)}</td>
+      <td contenteditable data-f="name" data-id="${t.id}" style="padding-left:${12+lvl*18}px;${sum?'font-weight:700':''}">${sum?'▾ ':''}${t.milestone?'◆ ':''}${esc(t.name)}</td>
       <td><span contenteditable data-f="owner" data-id="${t.id}" class="ownercell" style="background:${COLORS[t.owner]||'#555'}">${esc(t.owner||'?')}</span></td>
-      <td contenteditable data-f="start" data-id="${t.id}">${fmt(t.start)}</td>
-      <td contenteditable data-f="finish" data-id="${t.id}">${fmt(t.finish)}</td>
+      ${dateCell('start')}
+      ${dateCell('finish')}
       <td contenteditable data-f="preds" data-id="${t.id}" class="predcell">${predsToRowNums(t)}</td>
       <td><select class="statussel ${cls}" data-id="${t.id}">${STATUS_CYCLE.map(s=>`<option value="${s}"${s===t.status?' selected':''}>${STATUS[s][0]}</option>`).join('')}</select></td>
-      <td><div class="progcell"><input type="number" class="proginput" min="0" max="100" value="${t.prog}" data-id="${t.id}"><div class="bar"><i style="width:${t.prog}%"></i></div></div></td>
-      <td><button class="rowdel" data-del="${t.id}" title="Delete">×</button></td>`;
+      ${progCell}
+      <td class="rowtools"><button class="rtbtn" data-outdent="${t.id}" title="Outdent (promote)">⬅</button><button class="rtbtn" data-indent="${t.id}" title="Indent (make sub-task)">➡</button><button class="rowdel" data-del="${t.id}" title="Delete">×</button></td>`;
     tb.appendChild(tr);
   });
   const addtr=document.createElement('tr');addtr.className='addrow';
   addtr.innerHTML=`<td colspan="10" id="gridAdd">＋ Add task${state.tasks.length?'':' &nbsp;— this project is empty'}</td>`;
   tb.appendChild(addtr);
 }
+function moveTask(dragId,targetId,after){
+  const from=state.tasks.findIndex(t=>t.id===dragId);if(from<0)return;
+  const [m]=state.tasks.splice(from,1);
+  if(targetId==null||targetId===dragId){state.tasks.splice(from,0,m);}
+  else{let to=state.tasks.findIndex(t=>t.id===targetId);if(after)to++;state.tasks.splice(to,0,m);}
+  save();renderAll();
+}
+function indent(t,dir){
+  const idx=state.tasks.indexOf(t);if(idx<0)return;
+  if(dir>0){if(idx===0)return;t.level=Math.min((t.level||0)+1,(state.tasks[idx-1].level||0)+1);}
+  else t.level=Math.max(0,(t.level||0)-1);
+  save();renderAll();
+}
 function addBlankTask(){
-  const t={id:nextId(),name:'New task',owner:'?',start:'',finish:'',status:'track',prog:0,milestone:false,preds:[],priority:'med',notes:''};
+  const t={id:nextId(),name:'New task',owner:'?',start:'',finish:'',status:'track',prog:0,milestone:false,preds:[],priority:'med',notes:'',level:0};
   state.tasks.push(t);save();renderAll();
   const cell=document.querySelector(`#gridtbl td[data-f="name"][data-id="${t.id}"]`);
   if(cell){cell.focus();const r=document.createRange();r.selectNodeContents(cell);const s=getSelection();s.removeAllRanges();s.addRange(r);}
@@ -433,11 +475,32 @@ document.querySelector('#gridtbl').addEventListener('click',e=>{
   const del=e.target.closest('[data-del]');
   if(del){const id=+del.dataset.del;state.tasks=state.tasks.filter(t=>t.id!==id);save();renderAll();return;}
   if(e.target.id==='gridAdd'){addBlankTask();return;}
+  const ind=e.target.closest('[data-indent]');if(ind){indent(byId(+ind.dataset.indent),1);return;}
+  const outd=e.target.closest('[data-outdent]');if(outd){indent(byId(+outd.dataset.outdent),-1);return;}
   const pd=e.target.closest('[data-pri]');
   if(pd){const t=byId(+pd.dataset.pri);const order=['low','med','high','critical'];t.priority=order[(order.indexOf(t.priority||'med')+1)%4];save();renderAll();return;}
   const ed=e.target.closest('[data-edit]');
   if(ed){openModal(byId(+ed.dataset.edit));return;}
 });
+/* drag rows to reorder */
+let rowDragId=null;
+(function setupRowReorder(){
+  const tb=document.querySelector('#gridtbl tbody');
+  tb.addEventListener('dragstart',e=>{const h=e.target.closest('[data-drag]');if(!h){return;}rowDragId=+h.dataset.drag;e.dataTransfer.effectAllowed='move';});
+  tb.addEventListener('dragover',e=>{
+    if(rowDragId==null)return;e.preventDefault();
+    tb.querySelectorAll('.drop-above,.drop-below').forEach(r=>r.classList.remove('drop-above','drop-below'));
+    const tr=e.target.closest('tr');
+    if(tr&&!tr.classList.contains('addrow')){const r=tr.getBoundingClientRect();tr.classList.add(e.clientY>r.top+r.height/2?'drop-below':'drop-above');}
+  });
+  tb.addEventListener('drop',e=>{
+    if(rowDragId==null)return;e.preventDefault();
+    const tr=e.target.closest('tr');let targetId=null,after=true;
+    if(tr&&!tr.classList.contains('addrow')){const any=tr.querySelector('[data-drag]')||tr.querySelector('[data-id]');targetId=any?+(any.dataset.drag||any.dataset.id):null;const r=tr.getBoundingClientRect();after=e.clientY>r.top+r.height/2;}
+    const d=rowDragId;rowDragId=null;moveTask(d,targetId,after);
+  });
+  tb.addEventListener('dragend',()=>{rowDragId=null;tb.querySelectorAll('.drop-above,.drop-below').forEach(r=>r.classList.remove('drop-above','drop-below'));});
+})();
 document.querySelector('#gridtbl').addEventListener('change',e=>{
   const sel=e.target.closest('.statussel');
   if(sel){const t=byId(+sel.dataset.id);t.status=sel.value;if(t.status==='done')t.prog=100;save();renderAll();return;}
@@ -447,7 +510,7 @@ document.querySelector('#gridtbl').addEventListener('change',e=>{
 document.querySelector('#gridtbl').addEventListener('blur',e=>{
   const cell=e.target.closest('[contenteditable]');if(!cell)return;
   const t=byId(+cell.dataset.id),f=cell.dataset.f,v=cell.textContent.trim();
-  if(f==='name')t.name=v.replace(/^◆\s*/,'')||'Untitled';
+  if(f==='name')t.name=v.replace(/^[▾▸◆\s]+/,'')||'Untitled';
   else if(f==='owner'){t.owner=v.toUpperCase().slice(0,3)||'?';ensureColor(t.owner);}
   else if(f==='start'||f==='finish'){const d=parseDate(v);if(d)t[f]=d;else if(v==='')t[f]='';}
   else if(f==='preds'){if(!setPreds(t,parsePreds(v,t.id))){alert('That would create a circular dependency — not applied.');}}
@@ -480,7 +543,7 @@ function renderGantt(){
       if(t.milestone)bar=`<div class="gmile ${crit?'mcrit':''}" data-bar="${t.id}" style="left:${Math.max(0,left)}%"></div>`;
       else bar=`<div class="gbar ${crit?'crit':''} ${t.status==='done'?'done':''}" data-bar="${t.id}" style="left:${left}%;width:${width}%">${esc(t.name).slice(0,20)}<i class="gh"></i></div>`;
     }
-    rows+=`<div class="gantt-row"><div class="g-name">${idx+1}. ${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="g-track">${bar}</div></div>`;
+    rows+=`<div class="gantt-row"><div class="g-name" style="padding-left:${12+(t.level||0)*14}px;${t._summary?'font-weight:700':''}">${idx+1}. ${t._summary?'▾ ':''}${t.milestone?'◆ ':''}${esc(t.name)}</div><div class="g-track">${bar}</div></div>`;
   });
   wrap.innerHTML=head+rows;
   wrap.dataset.totalDays=totalDays;
@@ -893,7 +956,7 @@ document.getElementById('projFile').onchange=e=>{
     const tasks=Array.isArray(d.tasks)?d.tasks:(Array.isArray(d)?d:null);
     if(!tasks)throw new Error('no tasks found in file');
     const valid=tasks.filter(t=>t&&t.name);const idmap={};valid.forEach((t,i)=>idmap[t.id]=i+1);
-    const clean=valid.map((t,i)=>({id:i+1,name:String(t.name),owner:(t.owner||'?'),start:t.start||'',finish:t.finish||'',status:t.status||'track',prog:Math.min(100,Math.max(0,+t.prog||0)),milestone:!!t.milestone,preds:Array.isArray(t.preds)?t.preds.map(p=>idmap[p]).filter(Boolean):[]}));
+    const clean=valid.map((t,i)=>({id:i+1,name:String(t.name),owner:(t.owner||'?'),start:t.start||'',finish:t.finish||'',status:t.status||'track',prog:Math.min(100,Math.max(0,+t.prog||0)),milestone:!!t.milestone,preds:Array.isArray(t.preds)?t.preds.map(p=>idmap[p]).filter(Boolean):[],priority:t.priority||'med',notes:t.notes||'',level:+t.level||0}));
     clean.forEach(t=>ensureColor(t.owner));
     const p=newProject(d.name||f.name.replace(/\.[^.]+$/,''),clean);
     DB.projects.push(p);state=p;save();renderProjects();renderAll();
