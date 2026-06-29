@@ -149,8 +149,8 @@
   .dh{color:var(--muted);margin-right:3px;font-size:11px}
   .rocell{color:var(--muted);font-size:13px}
   .rowtools{white-space:nowrap;text-align:right}
-  .rtbtn{opacity:0;background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px}
-  tr:hover .rtbtn{opacity:.75}
+  .rtbtn{opacity:.55;background:none;border:none;color:var(--muted);cursor:pointer;font-size:19px;line-height:1;padding:2px 5px}
+  tr:hover .rtbtn{opacity:.9}
   .rtbtn:hover{color:var(--accent);opacity:1}
   tr.drop-above td{box-shadow:inset 0 2px 0 var(--accent)}
   tr.drop-below td{box-shadow:inset 0 -2px 0 var(--accent)}
@@ -811,9 +811,10 @@ function parseMSP(xmlText){
     const name=T(tk.querySelector('Name')).trim();
     if(!name||uid==='0')return;
     const prog=parseInt(T(tk.querySelector('PercentComplete'))||'0',10)||0;
-    out.push({name,owner:assign[uid]?assign[uid]:'?',start:toISO(T(tk.querySelector('Start'))),
+    const preds=[...tk.children].filter(c=>c.tagName==='PredecessorLink').map(pl=>T(pl.querySelector('PredecessorUID'))).filter(Boolean);
+    out.push({_uid:uid,name,owner:assign[uid]?assign[uid]:'?',start:toISO(T(tk.querySelector('Start'))),
       finish:toISO(T(tk.querySelector('Finish'))),status:prog>=100?'done':'track',prog,
-      milestone:T(tk.querySelector('Milestone'))==='1'});
+      milestone:T(tk.querySelector('Milestone'))==='1',preds});
   });
   return out;
 }
@@ -827,9 +828,15 @@ function showImportConfirm(list,kind){
 }
 function doImport(mode){
   if(!_pending)return;
-  _pending.forEach(t=>ensureColor(t.owner));
   if(mode==='replace')state.tasks=[];
-  _pending.forEach(t=>state.tasks.push({id:nextId(),...t}));
+  let nid=nextId();const uidMap={};
+  const items=_pending.map(t=>{const o={...t,id:nid};if(t._uid!=null)uidMap[String(t._uid)]=nid;nid++;return o;});
+  items.forEach(t=>{
+    ensureColor(t.owner);
+    t.preds=Array.isArray(t.preds)?t.preds.map(p=>uidMap[String(p)]).filter(Boolean):[];
+    delete t._uid;
+    state.tasks.push(t);
+  });
   _pending=null;save();renderAll();
   document.getElementById('importModal').classList.remove('open');
 }
