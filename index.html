@@ -355,44 +355,38 @@ function reschedule(){
   const DAY=864e5, EPOCH=Date.UTC(2020,0,1);
   const toDay=iso=>{if(!iso)return null;const d=new Date(iso);return isNaN(d)?null:Math.round((Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())-EPOCH)/DAY);};
   const toISO=n=>new Date(EPOCH+n*DAY).toISOString().slice(0,10);
+  ts.forEach((t,i)=>{t._summary=i+1<ts.length&&(ts[i+1].level||0)>(t.level||0);});
+  const leaves=ts.filter(t=>!t._summary),isLeaf={};leaves.forEach(t=>isLeaf[t.id]=true);
   const byid={};ts.forEach(t=>byid[t.id]=t);
-  const dur={};ts.forEach(t=>{if(t.milestone){dur[t.id]=0;return;}const s=toDay(t.start),f=toDay(t.finish);dur[t.id]=(s!=null&&f!=null)?Math.max(1,f-s+1):1;});
+  const dur={};leaves.forEach(t=>{if(t.milestone){dur[t.id]=0;return;}const s=toDay(t.start),f=toDay(t.finish);dur[t.id]=(s!=null&&f!=null)?Math.max(1,f-s+1):1;});
   const preds={},succs={};
-  ts.forEach(t=>{preds[t.id]=(t.preds||[]).filter(p=>byid[p]&&p!==t.id);succs[t.id]=[];});
-  ts.forEach(t=>preds[t.id].forEach(p=>succs[p].push(t.id)));
-  const indeg={};ts.forEach(t=>indeg[t.id]=preds[t.id].length);
-  const q=ts.filter(t=>indeg[t.id]===0).map(t=>t.id),order=[];
+  leaves.forEach(t=>{preds[t.id]=(t.preds||[]).filter(p=>isLeaf[p]&&p!==t.id);succs[t.id]=[];});
+  leaves.forEach(t=>preds[t.id].forEach(p=>succs[p].push(t.id)));
+  const indeg={};leaves.forEach(t=>indeg[t.id]=preds[t.id].length);
+  const q=leaves.filter(t=>indeg[t.id]===0).map(t=>t.id),order=[];
   while(q.length){const id=q.shift();order.push(id);succs[id].forEach(s=>{if(--indeg[s]===0)q.push(s);});}
-  if(order.length!==ts.length)return false;                       // cycle → bail, keep manual dates
-  const starts=ts.map(t=>toDay(t.start)).filter(v=>v!=null);
+  if(order.length!==leaves.length)return false;                   // cycle → bail, keep manual dates
+  const starts=leaves.map(t=>toDay(t.start)).filter(v=>v!=null);
   const base=starts.length?Math.min(...starts):Math.round((Date.now()-EPOCH)/DAY);
   const ES={},EF={};
   order.forEach(id=>{const t=byid[id];let es;
     if(preds[id].length)es=Math.max(...preds[id].map(p=>EF[p]+1));
     else{const own=toDay(t.start);es=own!=null?own:base;}
     ES[id]=es;EF[id]=es+(dur[id]>0?dur[id]-1:0);});
-  const projEnd=Math.max(...order.map(id=>EF[id]));
+  const projEnd=order.length?Math.max(...order.map(id=>EF[id])):0;
   const LF={},LS={};
   [...order].reverse().forEach(id=>{let lf=succs[id].length?Math.min(...succs[id].map(s=>LS[s]-1)):projEnd;LF[id]=lf;LS[id]=lf-(dur[id]>0?dur[id]-1:0);});
   let changed=false;
   order.forEach(id=>{const slack=LS[id]-ES[id];CPM[id]={es:ES[id],ef:EF[id],slack,critical:slack<=0};
     const t=byid[id];
     if(preds[id].length){const ns=toISO(ES[id]),nf=toISO(EF[id]);if(t.start!==ns||t.finish!==nf){t.start=ns;t.finish=nf;changed=true;}}});
-  // WBS summary rollups: a task with deeper-indented tasks below it is a summary; roll up dates + progress
+  // WBS rollups: summaries take min child start, max child finish, avg leaf progress (excluded from CPM above)
   for(let i=ts.length-1;i>=0;i--){
-    const t=ts[i],lvl=t.level||0;let starts=[],finishes=[],leafProgs=[],hasChild=false;
-    for(let j=i+1;j<ts.length&&(ts[j].level||0)>lvl;j++){
-      hasChild=true;const ch=ts[j];
-      if(ch.start)starts.push(ch.start);if(ch.finish)finishes.push(ch.finish);
-      const leaf=!(j+1<ts.length&&(ts[j+1].level||0)>(ch.level||0));
-      if(leaf)leafProgs.push(+ch.prog||0);
-    }
-    t._summary=hasChild;
-    if(hasChild){
-      if(starts.length)t.start=starts.reduce((a,b)=>a<b?a:b);
-      if(finishes.length)t.finish=finishes.reduce((a,b)=>a>b?a:b);
-      if(leafProgs.length)t.prog=Math.round(leafProgs.reduce((a,b)=>a+b,0)/leafProgs.length);
-    }
+    if(!ts[i]._summary)continue;const lvl=ts[i].level||0;let st=[],fi=[],pr=[];
+    for(let j=i+1;j<ts.length&&(ts[j].level||0)>lvl;j++){const ch=ts[j];if(ch.start)st.push(ch.start);if(ch.finish)fi.push(ch.finish);if(!ch._summary)pr.push(+ch.prog||0);}
+    if(st.length){const v=st.reduce((a,b)=>a<b?a:b);if(ts[i].start!==v){ts[i].start=v;changed=true;}}
+    if(fi.length){const v=fi.reduce((a,b)=>a>b?a:b);if(ts[i].finish!==v){ts[i].finish=v;changed=true;}}
+    if(pr.length)ts[i].prog=Math.round(pr.reduce((a,b)=>a+b,0)/pr.length);
   }
   if(changed)try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){}
   return true;
